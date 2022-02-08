@@ -43,9 +43,9 @@ app = FastAPI(
     description=desc,
     version="0.1.0",
     #terms_of_service="http://example.com/terms/",
-    docs_url='/api/docs', 
-    redoc_url='/api/redoc',
-    openapi_url='/api/openapi.json'
+    docs_url='/iapi/docs', 
+    redoc_url='/iapi/redoc',
+    openapi_url='/iapi/openapi.json'
 
 )
 
@@ -60,7 +60,7 @@ def is_empty(field):
 #    return {'result': 'hello'}
 
 
-@app.post('/api/internal/cpg') #UI get uploaded file from user, call this API to process data, if data valid will create campaign
+@app.post('/iapi/internal/cpg') #UI get uploaded file from user, call this API to process data, if data valid will create campaign
 #async def create_campaign(arg_new_cpg: models.InternalNewCampaign, request: Request, auth_result=Depends(myauth.allowinternal)):
 async def create_campaign(
     request: Request,
@@ -126,7 +126,7 @@ async def create_campaign(
 
 
 whitelist_ip = ['127.0.0.1','localhost','13.214.145.167']
-@app.post('/api/internal/sms', response_model=models.SMSResponse, responses=mysms.example_create_sms_response)
+@app.post('/iapi/internal/sms', response_model=models.SMSResponse, responses=mysms.example_create_sms_response)
 async def internal_create_sms(arg_sms: models.InternalSMS, request:Request, auth_result=Depends(myauth.allowinternal)):
     d_sms = arg_sms.dict()
     logger.info(f"debug post body")
@@ -302,7 +302,7 @@ async def internal_create_sms(arg_sms: models.InternalSMS, request:Request, auth
 
 from werkzeug.security import generate_password_hash,check_password_hash
 
-@app.post('/api/internal/login') #check webuser where deleted=0, and live=1
+@app.post('/iapi/internal/login') #check webuser where deleted=0, and live=1
 async def verify_login(arg_login: models.InternalLogin, request:Request, response:Response):
 #async def verify_login(arg_login: models.InternalLogin, request:Request, response:Response, auth_result=Depends(myauth.allowinternal)):
     # check if username exists
@@ -354,7 +354,7 @@ async def verify_login(arg_login: models.InternalLogin, request:Request, respons
 
     return JSONResponse(status_code=200, content=resp_json)
 
-@app.get("/api/internal/billing") # get all billing accounts
+@app.get("/iapi/internal/billing") # get all billing accounts
 async def get_all_billing_accounts():
     cur.execute(f"""
     select id,company_name,company_address,country,city,postal_code,contact_name,billing_email,
@@ -403,7 +403,7 @@ async def get_all_billing_accounts():
  
     return JSONResponse(status_code=200, content=resp_json)
 
-@app.get("/api/internal/billing/{billing_id}") # get billing account info
+@app.get("/iapi/internal/billing/{billing_id}") # get billing account info
 async def get_billing_account_info(billing_id: int):
     cur.execute(f"""
     select id,company_name,company_address,country,city,postal_code,contact_name,billing_email,
@@ -443,13 +443,13 @@ async def get_billing_account_info(billing_id: int):
 
 
 # use responses to add additional response like returning errors
-@app.get("/api/internal/account/{billing_id}") #get all accounts for a billing account
+@app.get("/iapi/internal/account/{billing_id}") #get all accounts for a billing account
 def get_accounts_by_billing_id(billing_id: int):
     result = func_get_all_accounts(billing_id)
     return result
 
 
-@app.get("/api/internal/account")#get all accounts (related to billing accounts)
+@app.get("/iapi/internal/account")#get all accounts (related to billing accounts)
 def get_all_accounts():
     result = func_get_all_accounts()
     return result
@@ -507,12 +507,12 @@ def func_get_all_accounts(billing_id=None):
  
     return JSONResponse(status_code=200, content=resp_json)
 
-@app.get("/api/internal/webuser")#get all webusers
+@app.get("/iapi/internal/webuser")#get all webusers
 def get_all_webusers():
     result = func_get_webusers()
     return result
 
-@app.get("/api/internal/webuser/{billing_id}")#get all webuser of one billing account
+@app.get("/iapi/internal/webuser/{billing_id}")#get all webuser of one billing account
 def get_webusers_by_billing_id(billing_id:int):
 
     result = func_get_webusers(billing_id)
@@ -580,7 +580,7 @@ def get_userid_from_email(email):
     except:
         return None
 
-@app.post("/api/internal/insert", 
+@app.post("/iapi/internal/insert", 
 #response_model=models.InsertResponse, 
             responses={404: {"errorcode": 1, "status": "some error msg"} }
 )
@@ -837,7 +837,7 @@ async def insert_record(
 
 
 
-@app.post("/api/internal/update", 
+@app.post("/iapi/internal/update", 
 #response_model=models.InsertResponse, 
             responses={404: {"errorcode": 1, "status": "some error msg"} }
 )
@@ -983,7 +983,7 @@ async def update_record(
     
     return JSONResponse(status_code=200,content=resp_json)
 
-@app.post("/api/internal/password_hash")
+@app.post("/iapi/internal/password_hash")
 async def get_password_hash(args: models.PasswordHashRequest):
     password_hash = generate_password_hash(args.password)
     resp_json = {
@@ -992,7 +992,7 @@ async def get_password_hash(args: models.PasswordHashRequest):
     }
     return JSONResponse(content=resp_json)
 
-@app.get("/api/internal/audit")
+@app.get("/iapi/internal/audit")
 async def get_auditlog():
     cur.execute(f"""select a.creation_time,u.username,a.auditlog,b.company_name from audit a 
                 join webuser u on a.webuser_id = u.id join billing_account b on u.billing_id = b.id order by a.creation_time desc limit 100;""")
@@ -1028,7 +1028,7 @@ async def get_auditlog():
     return JSONResponse(status_code=200, content=resp_json)
 
 
-@app.get("/api/internal/audit/{billing_id}", response_model=models.GetAuditResponse,
+@app.get("/iapi/internal/audit/{billing_id}", response_model=models.GetAuditResponse,
         responses={404: {"model": models.MsgNotFound}})
 async def get_auditlog_by_billing_id(billing_id:int):
     cur.execute(f"""select a.creation_time,u.username,a.auditlog,b.company_name from audit a 
@@ -1065,7 +1065,7 @@ async def get_auditlog_by_billing_id(billing_id:int):
     return JSONResponse(status_code=200, content=resp_json)
 
 
-@app.post("/api/internal/traffic_report") #optional arg: billing_id, account_id
+@app.post("/iapi/internal/traffic_report") #optional arg: billing_id, account_id
 async def traffic_report(
     args: models.TrafficReportRequest = Body(
         ...,
@@ -1140,7 +1140,7 @@ async def traffic_report(
     
     return JSONResponse(status_code=200, content=resp_json)
     
-@app.post("/api/internal/transaction") #optional arg: billing_id, account_id
+@app.post("/iapi/internal/transaction") #optional arg: billing_id, account_id
 async def transaction_report(
     args: models.TransactionRequest = Body(
         ...,
@@ -1226,7 +1226,7 @@ async def transaction_report(
     
     return JSONResponse(status_code=200, content=resp_json)
 
-@app.post("/api/internal/volume_chart") #optional arg: billing_id, account_id
+@app.post("/iapi/internal/volume_chart") #optional arg: billing_id, account_id
 async def volume_chart(
     args: models.TrafficReportRequest = Body(
         ...,
@@ -1298,7 +1298,7 @@ async def volume_chart(
     
     return JSONResponse(status_code=200, content=resp_json)
 
-@app.post("/api/internal/cost_chart") #optional arg: billing_id, account_id
+@app.post("/iapi/internal/cost_chart") #optional arg: billing_id, account_id
 async def volume_chart(
     args: models.TrafficReportRequest = Body(
         ...,
@@ -1369,7 +1369,7 @@ async def volume_chart(
     
     return JSONResponse(status_code=200, content=resp_json)
 
-#@app.post("/api/internal/cpg_report") #optional arg: billing_id, account_id
+#@app.post("/iapi/internal/cpg_report") #optional arg: billing_id, account_id
 #async def campaign_report(
 #    args: models.TrafficReportRequest = Body(
 #        ...,
@@ -1445,12 +1445,12 @@ async def volume_chart(
 #    
 #    return JSONResponse(status_code=200, content=resp_json)
 
-@app.get("/api/internal/cpg_report") #return all campaign
+@app.get("/iapi/internal/cpg_report") #return all campaign
 async def get_all_campaign_report():
     result = func_get_campaign_report()
     return result
 
-@app.get("/api/internal/cpg_report/{billing_id}") #return all campaign of this billing account
+@app.get("/iapi/internal/cpg_report/{billing_id}") #return all campaign of this billing account
 async def get_campaign_report_by_billing_id(billing_id: int):
 #    sql = f"""select n.cpg_id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,b.company_name,a.name as account_name,p.name as product_name,cpg.xms,count(*) from cpg_blast_list n               join cpg on n.cpg_id=cpg.id join billing_account b on cpg.billing_id=b.id join account a on cpg.account_id=a.id join product p on cpg.product_id=p.id 
 #                where n.field_name='number' """
