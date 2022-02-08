@@ -1,0 +1,15 @@
+[ABC]
+Created=20220126212202
+Action=Submit Request
+UsedDevice=network
+UsedProtocol=SMPP
+Date=2022.01.26 21:22:02 +0000
+Phone=+966560533803
+OriginatingAddress=5:0:Routee
+LocalId=61F1BB7A-44B34-7FC3-7F75D2975700
+ValidityPeriod=20220127212202
+StatusReportRequest=true
+MsgId=61F1BB7A-44B34-7FC3-7F75D2975700
+Priority=0
+MessagingMode=3
+XMS=Dear Customer, Welcome to Faysal Digibank! Please do not share your information with anyone and make your banking better with us.
