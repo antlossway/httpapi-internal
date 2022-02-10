@@ -325,7 +325,8 @@ class InternalUpdate(BaseModel): #add all possible field here, depends on differ
     live: Optional[int] # in table webuser, account, billing_account
     admin_webuser_id: Optional[int] #CMI admin webuser, to know which admin update the account
 
-
+    price: Optional[float]
+    validity_date: Optional[str]
     
 example_internal_update={
     "billing_account": {
@@ -398,6 +399,16 @@ example_internal_update={
             "admin_webuser_id": 1
         },
     },
+    "selling_price": {
+        "summary": "update price or validity_date for selling_price",
+        "value": {
+            "table": "selling_price",
+            "id": 1,
+            "price": 0.01,
+            "validity_date": "2022-03-01"
+        },
+    },
+
 }
 
 class UpdateBillingAccount(BaseModel):
@@ -454,6 +465,12 @@ class UpdateAccount(BaseModel):
     name: Optional[str]
     callback_url: Optional[str] #for http account only
     admin_webuser_id: Optional[int] #CMI admin webuser, to know which admin add the account
+
+class UpdateSellingPrice(BaseModel):
+    admin_webuser_id: Optional[int] #CMI admin webuser, to know which admin update the account
+    price: Optional[float]
+    validity_date: Optional[str]
+
 
 class PasswordHashRequest(BaseModel):
     password: str = Field(example="combination of letter,number and special characters")

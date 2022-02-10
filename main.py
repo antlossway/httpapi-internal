@@ -968,6 +968,16 @@ async def update_record(
                 "status": f"missing compulsory field"
             }
             return JSONResponse(status_code=500,content=resp_json)
+    elif table == 'selling_price':
+        try:
+            data_obj = models.UpdateSellingPrice(**args.dict()) #convert into defined model, removing useless field
+        except:
+            resp_json = {
+                "errorcode":2,
+                "status": f"missing compulsory field"
+            }
+            return JSONResponse(status_code=500,content=resp_json)
+
 
     #### general processing for any table
     d_data = data_obj.dict()
@@ -1610,6 +1620,41 @@ def get_operators():
         d[id] = name
     return d
 
+@app.get("/iapi/internal/country")#get all countries
+def get_all_country():
+    l_data = list()
+    cur.execute(f"select id,name from countries")
+    rows = cur.fetchall()
+    for row in rows:
+        (id,name) = row
+        d = {
+            "country_id": id,
+            "country_name":name
+        }
+        l_data.append(d)
+
+    resp_json = dict()
+
+    if len(l_data) > 0:
+        resp_json = {
+            "errorcode":0,
+            "count": len(l_data),
+            "status": "Success",
+            "results": l_data
+        }
+    else:
+        resp_json = {
+            "errorcode": 1,
+            "status":"No country found!"
+        }
+        return JSONResponse(status_code=404, content=resp_json)
+
+#    logger.info("### reply internal UI:")
+#    logger.info(json.dumps(resp_json, indent=4))
+ 
+    return JSONResponse(status_code=200, content=resp_json)
+
+
 @app.get("/iapi/internal/selling_price")#get all selling_price
 def get_all_selling_price():
     result = func_get_selling_price()
@@ -1626,8 +1671,8 @@ def func_get_selling_price(billing_id=None):
     d_countries = get_countries()
     d_operators = get_operators()
 
-    sql = """select b.id as billing_id,b.company_name, a.name as account_name, p.name as product_name,s.country_id,s.operator_id,s.price,a.currency,s.validity_date from selling_price s 
-            left join billing_account b on s.billing_id=b.id left join account a on s.account_id=a.id left join product p on a.product_id=p.id """
+    sql = """select s.id,b.id as billing_id,b.company_name, a.name as account_name, p.name as product_name,s.country_id,s.operator_id,s.price,a.currency,s.validity_date 
+            from selling_price s left join billing_account b on s.billing_id=b.id left join account a on s.account_id=a.id left join product p on a.product_id=p.id """
 
     if billing_id:
         sql += f"where s.billing_id={billing_id};"
@@ -1637,12 +1682,13 @@ def func_get_selling_price(billing_id=None):
     l_data = list() #list of dict
     rows = cur.fetchall()
     for row in rows:
-        (billing_id,company_name,account_name,product_name,cid,opid,price,currency,vd) = row
+        (id,billing_id,company_name,account_name,product_name,cid,opid,price,currency,vd) = row
         cname = d_countries.get(cid)
         opname = d_operators.get(opid)
         vd = vd.strftime("%Y-%m-%d")
 
         d = {
+            "id": id,
             "billing_id": billing_id,
             "company_name": company_name,
             "account_name": account_name,
