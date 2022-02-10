@@ -741,7 +741,6 @@ async def insert_record(
 
     elif table == 'selling_price': 
             ## compulsory field
-            # billing_id: int
             # account_id: int
             # country_id: int
             # operator_id: int
@@ -757,14 +756,13 @@ async def insert_record(
             }
             return JSONResponse(status_code=500,content=resp_json)
 
-        billing_id = data_obj.billing_id
         account_id = data_obj.account_id
         country_id = data_obj.country_id
         operator_id = data_obj.operator_id
         validity_date = data_obj.validity_date
         #make sure uniq entry for each validity_date
-        cur.execute("""select id,price from selling_price where billing_id=%s and account_id=%s and country_id=%s and operator_id=%s
-                        and validity_date=%s""", (billing_id,account_id,country_id,operator_id,validity_date))
+        cur.execute("""select id,price from selling_price where and account_id=%s and country_id=%s and operator_id=%s
+                        and validity_date=%s""", (account_id,country_id,operator_id,validity_date))
         try:
             (existing_id,price) = cur.fetchone()
             if existing_id:
@@ -986,13 +984,12 @@ async def update_record(
         #make sure uniq entry for each validity_date
         if validity_date:
             # get billing_id,account_id of the specified entry
-            cur.execute(f"select id,billing_id,account_id,country_id,operator_id from selling_price where id={id}")
-            (id,billing_id,account_id,country_id,operator_id) = cur.fetchone()
-            print(id,billing_id,account_id,country_id,operator_id)
+            cur.execute(f"select id,account_id,country_id,operator_id from selling_price where id={id}")
+            (id,account_id,country_id,operator_id) = cur.fetchone()
 
             # check if there is existing validity_date for the same account
-            cur.execute("""select id,price from selling_price where billing_id=%s and account_id=%s and country_id=%s and operator_id=%s
-                        and validity_date=%s and id != %s""", (billing_id,account_id,country_id,operator_id,validity_date,id))
+            cur.execute("""select id,price from selling_price where account_id=%s and country_id=%s and operator_id=%s
+                        and validity_date=%s and id != %s""", (account_id,country_id,operator_id,validity_date,id))
             try:
                 (existing_id,price) = cur.fetchone()
                 if existing_id:

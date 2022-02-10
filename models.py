@@ -185,7 +185,6 @@ class InsertHTTPAccount(BaseModel):
     # api_secret: str
 
 class InsertSellingPrice(BaseModel):
-    billing_id: Optional[int] #webuser, audit, whitelist_ip, smpp_account, selling_price
     account_id: Optional[int]
     country_id: Optional[int]
     operator_id: Optional[int]
@@ -274,7 +273,6 @@ example_internal_insert={
         "summary": "insert into selling_price, the price CMI sell to their customers",
         "value":{
             "table": "selling_price",
-            "billing_id": 1,
             "account_id": 10003,
             "country_id": 3,
             "operator_id": 408,
@@ -283,7 +281,6 @@ example_internal_insert={
             "admin_webuser_id": 1
         },
     },
-
 
 }
 
@@ -329,6 +326,7 @@ class InternalUpdate(BaseModel): #add all possible field here, depends on differ
     live: Optional[int] # in table webuser, account, billing_account
     admin_webuser_id: Optional[int] #CMI admin webuser, to know which admin update the account
 
+    #selling_price
     price: Optional[float]
     validity_date: Optional[str]
     
