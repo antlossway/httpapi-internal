@@ -428,7 +428,7 @@ async def get_billing_account_info(billing_id: int):
             "live": live,
             "ip_list": ip_list
         }
-        print(resp_json)
+#        print(resp_json)
     except:
         resp_json = {
             "errorcode": 1,
@@ -739,6 +739,44 @@ async def insert_record(
 
         data_obj.name = name #put back cleaned name into object
 
+    elif table == 'selling_price': 
+            ## compulsory field
+            # billing_id: int
+            # account_id: int
+            # country_id: int
+            # operator_id: int
+            # selling_price: float
+            # validity_date: str
+            # admin_webuser_id: int
+        try:
+            data_obj = models.InsertSellingPrice(**args.dict()) #convert into defined model, removing useless field
+        except:
+            resp_json = {
+                "errorcode":2,
+                "status": f"missing compulsory field"
+            }
+            return JSONResponse(status_code=500,content=resp_json)
+
+        billing_id = data_obj.billing_id
+        account_id = data_obj.account_id
+        country_id = data_obj.country_id
+        operator_id = data_obj.operator_id
+        validity_date = data_obj.validity_date
+        #make sure uniq entry for each validity_date
+        cur.execute("""select id,price from selling_price where billing_id=%s and account_id=%s and country_id=%s and operator_id=%s
+                        and validity_date=%s""", (billing_id,account_id,country_id,operator_id,validity_date))
+        try:
+            (existing_id,price) = cur.fetchone()
+            if existing_id:
+                resp_json = {
+                    "errorcode":2,
+                    "status": f"already have price {price} defined for validity_date {validity_date}"
+                }
+                return JSONResponse(status_code=403,content=resp_json)
+        except:
+            pass
+ 
+#
     #### general processing for any table
     d_data = data_obj.dict()
 
@@ -760,11 +798,12 @@ async def insert_record(
         d_data['systemid'] = systemid
         d_data['password'] = password
         logger.info(f"debug smpp_account: {json.dumps(d_data,indent=4)}")
-    if table == 'account' and conn_type == 'http': # generate api_key/api_secret
+    elif table == 'account' and conn_type == 'http': # generate api_key/api_secret
         api_key = generate_otp('alphanumeric',20)
         api_secret = generate_otp('alphanumeric',40)
         d_data['api_key'] = api_key
         d_data['api_secret'] = api_secret
+
 
     data = dict() #hold the fields to be inserted into destination table
     
@@ -1078,50 +1117,60 @@ async def traffic_report(
     start_date = d_arg.get("start_date",None)
     end_date = d_arg.get("end_date",None)
     if not start_date or not end_date: #default return past 7 days traffic
-        sql = f"""select date, b.company_name,a.name as account_name,p.name as product_name,
-        status,sum(sum_split) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
-        join product p on cdr_agg.product_id=p.id where date >= current_date - interval '7 days' """
+        sql = f"""select date, b.company_name,a.name as account_name,p.name as product_name,countries.name as country,
+        status,sum(sum_split),sum(sum_sell) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
+        join product p on cdr_agg.product_id=p.id join countries on cdr_agg.country_id=countries.id where date >= current_date - interval '7 days' """
 
     else:
-        sql = f"""select date, b.company_name,a.name as account_name,p.name as product_name,
-        status,sum(sum_split) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
-        join product p on cdr_agg.product_id=p.id where date between '{start_date}' and '{end_date}' """
+        sql = f"""select date, b.company_name,a.name as account_name,p.name as product_name,countries.name as country,
+        status,sum(sum_split),sum(sum_sell) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
+        join product p on cdr_agg.product_id=p.id join countries on cdr_agg.country_id=countries.id where date between '{start_date}' and '{end_date}' """
 
     if account_id:
         sql += f"and cdr_agg.account_id = {account_id}"
     elif billing_id:
         sql += f"and cdr_agg.billing_id = {billing_id}"
-    sql += "group by date,company_name,account_name,product_name,status order by date"
+    sql += "group by date,company_name,account_name,product_name,countries.name,status order by date"
     logger.info(sql)
 
     l_data = list()
-    data = defaultdict(dict)
+    data_qty = defaultdict(dict) #2-dimention dict with sub-dict status => qty
+    data_sell = defaultdict(float) #simple dict
+    final_total_qty, final_total_sell = 0,0
 
     cur.execute(sql)
     rows = cur.fetchall()
     for row in rows:
-        (day,company_name,account_name,product_name,status,qty) = row
+        (day,company_name,account_name,product_name,country,status,qty,sell) = row
         day = day.strftime("%Y-%m-%d")
         if not status or status == '':
             status = 'Pending'
         try:
-            data[f"{day}---{company_name}---{account_name}---{product_name}"][status] += qty
+            data_qty[f"{day}---{company_name}---{account_name}---{product_name}---{country}"][status] += qty
         except:
-            data[f"{day}---{company_name}---{account_name}---{product_name}"][status] = qty
-    
-    for key,d_value in sorted(data.items()):
-        day,company_name,account_name,product_name = key.split('---')
+            data_qty[f"{day}---{company_name}---{account_name}---{product_name}---{country}"][status] = qty
+
+        data_sell[f"{day}---{company_name}---{account_name}---{product_name}---{country}"] += sell
+
+        final_total_qty += qty
+        final_total_sell += sell
+
+    for key,d_status_qty in sorted(data_qty.items()):
+        day,company_name,account_name,product_name,country = key.split('---')
         d = dict()
-        total = 0
-        for k,v in d_value.items():
-            d[k] = v
-            total += v
+        total_qty_per_country = 0
+
+        for status,qty in d_status_qty.items(): # for data_qty: status => qty, for data_sell: status => sell
+            d[status] = qty
+            total_qty_per_country += qty
         d['date'] = day
         d['company_name'] = company_name
         d['account_name'] = account_name
         d['product_name'] = product_name
-        d['total_sent'] = total
-        d['cost'] = total * 0.01 #TBD: get_selling_pricing
+        d['country'] = country
+        d['total_sent'] = total_qty_per_country
+#        d['cost'] = total * 0.01 #TBD: get_selling_pricing
+        d['cost'] = f"{data_sell.get(key,0):,.3f}"
         l_data.append(d)
     
     if len(l_data) > 0:
@@ -1129,6 +1178,8 @@ async def traffic_report(
             "errorcode" : 0,
             "status": "Success",
             "count": len(l_data),
+            "total_qty": f"{final_total_qty:,}",
+            "total_cost": f"{final_total_sell:,.3f}",
             "results": l_data
         }
     else:
@@ -1528,5 +1579,100 @@ def func_get_campaign_report(billing_id=None):
     logger.info("### reply client:")
     logger.info(json.dumps(resp_json, indent=4))
     
+    return JSONResponse(status_code=200, content=resp_json)
+
+
+def get_country_name(cid):
+    cur.execute(f"select name from countries where id={cid}")
+    cname = cur.fetchone()[0]
+    return cname
+
+def get_operator_name(opid):
+    cur.execute(f"select name from operators where id={cid}")
+    opname = cur.fetchone()[0]
+    return opname
+
+def get_countries():
+    cur.execute(f"select id,name from countries")
+    rows = cur.fetchall()
+    d = dict()
+    for row in rows:
+        (id,name) = row
+        d[id] = name
+    return d
+
+def get_operators():
+    cur.execute(f"select id,name from operators")
+    rows = cur.fetchall()
+    d = dict()
+    for row in rows:
+        (id,name) = row
+        d[id] = name
+    return d
+
+@app.get("/iapi/internal/selling_price")#get all selling_price
+def get_all_selling_price():
+    result = func_get_selling_price()
+    return result
+
+@app.get("/iapi/internal/selling_price/{billing_id}")
+def get_selling_price_by_billing_id(billing_id: int):
+    result = func_get_selling_price(billing_id)
+    return result
+
+
+def func_get_selling_price(billing_id=None):
+
+    d_countries = get_countries()
+    d_operators = get_operators()
+
+    sql = """select b.id as billing_id,b.company_name, a.name as account_name, p.name as product_name,s.country_id,s.operator_id,s.price,a.currency,s.validity_date from selling_price s 
+            left join billing_account b on s.billing_id=b.id left join account a on s.account_id=a.id left join product p on a.product_id=p.id """
+
+    if billing_id:
+        sql += f"where s.billing_id={billing_id};"
+    logger.info(sql)
+    cur.execute(sql)
+
+    l_data = list() #list of dict
+    rows = cur.fetchall()
+    for row in rows:
+        (billing_id,company_name,account_name,product_name,cid,opid,price,currency,vd) = row
+        cname = d_countries.get(cid)
+        opname = d_operators.get(opid)
+        vd = vd.strftime("%Y-%m-%d")
+
+        d = {
+            "billing_id": billing_id,
+            "company_name": company_name,
+            "account_name": account_name,
+            "product_name": product_name,
+            "country_name": cname,
+            "operator_name": opname,
+            "price": price,
+            "currency": currency,
+            "validity_date": vd
+        }
+
+        l_data.append(d)
+    
+    resp_json = dict()
+
+    if len(l_data) > 0:
+        resp_json = {
+            "errorcode":0,
+            "status": "Success",
+            "results": l_data
+        }
+    else:
+        resp_json = {
+            "errorcode": 1,
+            "status":"No selling price found!"
+        }
+        return JSONResponse(status_code=404, content=resp_json)
+
+    logger.info("### reply internal UI:")
+    logger.info(json.dumps(resp_json, indent=4))
+ 
     return JSONResponse(status_code=200, content=resp_json)
 
