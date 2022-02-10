@@ -978,6 +978,31 @@ async def update_record(
             }
             return JSONResponse(status_code=500,content=resp_json)
 
+        ## debug
+        #d_data = data_obj.dict()
+        #print(json.dumps(d_data, indent=4))
+
+        validity_date = data_obj.validity_date
+        #make sure uniq entry for each validity_date
+        if validity_date:
+            # get billing_id,account_id of the specified entry
+            cur.execute(f"select id,billing_id,account_id,country_id,operator_id from selling_price where id={id}")
+            (id,billing_id,account_id,country_id,operator_id) = cur.fetchone()
+            print(id,billing_id,account_id,country_id,operator_id)
+
+            # check if there is existing validity_date for the same account
+            cur.execute("""select id,price from selling_price where billing_id=%s and account_id=%s and country_id=%s and operator_id=%s
+                        and validity_date=%s and id != %s""", (billing_id,account_id,country_id,operator_id,validity_date,id))
+            try:
+                (existing_id,price) = cur.fetchone()
+                if existing_id:
+                    resp_json = {
+                        "errorcode":2,
+                        "status": f"already have price {price} defined for validity_date {validity_date}"
+                    }
+                    return JSONResponse(status_code=403,content=resp_json)
+            except:
+                pass
 
     #### general processing for any table
     d_data = data_obj.dict()
@@ -1031,6 +1056,59 @@ async def update_record(
         return JSONResponse(status_code=500, content=resp_json)      
     
     return JSONResponse(status_code=200,content=resp_json)
+
+@app.post("/iapi/internal/delete", 
+            responses={404: {"errorcode": 1, "status": "some error msg"} }
+)
+async def delete_record(
+    args: models.InternalDelete
+):
+    d_args = args.dict()
+    logger.debug(f"### orig internal delete request body: {json.dumps(d_args, indent=4)}")
+
+    if not 'table' in d_args or not 'id' in d_args:
+        resp_json = {
+            "errorcode":2,
+            "status": f"missing compulsory field table or id"
+        }
+        return JSONResponse(status_code=500,content=resp_json)
+
+    table = d_args['table']
+    id = d_args['id']
+
+    #### general processing for any table
+    sql = f"delete from {table} where id={id} returning id;"
+    logger.debug(sql)
+    resp_json = dict()
+    try:
+        cur.execute(sql)
+        cnt = cur.rowcount
+        if cnt:
+            resp_json = {
+                "errorcode":0,
+                "status": "Success",
+                "id": id,
+                "result": "deleted"
+            }
+            logger.debug(f"### reply internal delete: {json.dumps(resp_json,indent=4)}")
+        else:
+            resp_json = {
+                "errorcode":2,
+                "status": f"no id {id} found in {table}",
+            }
+            logger.debug(f"### reply internal delete: {json.dumps(resp_json,indent=4)}")
+            return JSONResponse(status_code=404, content=resp_json)
+
+    except Exception as err:
+        resp_json = {
+            "errorcode":2,
+            "status": f"delete {table} failed: {err}"
+        }
+        logger.info(f"reply internal delete: {json.dumps(resp_json,indent=4)}")
+        return JSONResponse(status_code=500, content=resp_json)      
+    
+    return JSONResponse(status_code=200,content=resp_json)
+
 
 @app.post("/iapi/internal/password_hash")
 async def get_password_hash(args: models.PasswordHashRequest):

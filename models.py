@@ -287,6 +287,10 @@ example_internal_insert={
 
 }
 
+class InternalDelete(BaseModel): #add all possible field here, depends on different table, some field may be null in request body
+    table: str = Field(description="name of table", example="selling_price")
+    id: int = Field(description="id of the record", example=10)
+ 
 class InternalUpdate(BaseModel): #add all possible field here, depends on different table, some field may be null in request body
     table: str= Field(description="name of table")
     id: int
@@ -405,7 +409,8 @@ example_internal_update={
             "table": "selling_price",
             "id": 1,
             "price": 0.01,
-            "validity_date": "2022-03-01"
+            "validity_date": "2022-03-01",
+            "admin_webuser_id": 1
         },
     },
 
