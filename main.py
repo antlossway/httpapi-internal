@@ -761,7 +761,7 @@ async def insert_record(
         operator_id = data_obj.operator_id
         validity_date = data_obj.validity_date
         #make sure uniq entry for each validity_date
-        cur.execute("""select id,price from selling_price where and account_id=%s and country_id=%s and operator_id=%s
+        cur.execute("""select id,price from selling_price where account_id=%s and country_id=%s and operator_id=%s
                         and validity_date=%s""", (account_id,country_id,operator_id,validity_date))
         try:
             (existing_id,price) = cur.fetchone()
@@ -1735,7 +1735,7 @@ def get_all_selling_price():
     result = func_get_selling_price()
     return result
 
-@app.get("/iapi/internal/selling_price/{billing_id}")
+@app.get("/iapi/internal/selling_price/{billing_id}") #get selling price for all accounts belong to this billing_id
 def get_selling_price_by_billing_id(billing_id: int):
     result = func_get_selling_price(billing_id)
     return result
@@ -1746,25 +1746,28 @@ def func_get_selling_price(billing_id=None):
     d_countries = get_countries()
     d_operators = get_operators()
 
-    sql = """select s.id,b.id as billing_id,b.company_name, a.name as account_name, p.name as product_name,s.country_id,s.operator_id,s.price,a.currency,s.validity_date 
-            from selling_price s left join billing_account b on s.billing_id=b.id left join account a on s.account_id=a.id left join product p on a.product_id=p.id """
+    sql = """select s.id,b.id as billing_id,s.account_id, b.company_name ,a.name as account_name,p.name as product_name,s.country_id,s.operator_id,s.price,a.currency,s.validity_date 
+            from selling_price s left join account a on s.account_id=a.id left join billing_account b on a.billing_id=b.id left join product p on a.product_id=p.id """
 
     if billing_id:
-        sql += f"where s.billing_id={billing_id};"
+        sql += f"where a.billing_id={billing_id} "
+
+    sql += "order by billing_id,account_id,country_id,operator_id,validity_date"
     logger.info(sql)
     cur.execute(sql)
 
     l_data = list() #list of dict
     rows = cur.fetchall()
     for row in rows:
-        (id,billing_id,company_name,account_name,product_name,cid,opid,price,currency,vd) = row
+        (idx,billing_id,account_id,company_name,account_name,product_name,cid,opid,price,currency,vd) = row
         cname = d_countries.get(cid)
         opname = d_operators.get(opid)
         vd = vd.strftime("%Y-%m-%d")
 
         d = {
-            "id": id,
+            "id": idx,
             "billing_id": billing_id,
+            "account_id": account_id,
             "company_name": company_name,
             "account_name": account_name,
             "product_name": product_name,
