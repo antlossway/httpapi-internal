@@ -1794,29 +1794,33 @@ def get_selling_price_by_billing_id(billing_id: int):
     result = func_get_selling_price(billing_id)
     return result
 
-
-def func_get_selling_price(billing_id=None):
-
+def helper_get_route_price_info(d):
     d_countries = get_countries()
     d_operators = get_operators()
 
-    sql = """select s.id,b.id as billing_id,s.account_id, b.company_name ,a.name as account_name,p.name as product_name,s.country_id,s.operator_id,s.price,a.currency,s.validity_date 
-            from selling_price s left join account a on s.account_id=a.id left join billing_account b on a.billing_id=b.id left join product p on a.product_id=p.id """
+    l_data = list()
 
-    if billing_id:
-        sql += f"where a.billing_id={billing_id} "
+    for index, v in sorted(d.items()):
+        (billing_id,account_id,company_name,account_name,product_id,product_name,cid,opid,currency,vd) = index.split("---")
+        (idx,price) = v.split("---")
+        idx = int(idx)
+        billing_id = int(billing_id)
+        account_id = int(account_id)
+        product_id = int(product_id)
+        cid = int(cid)
+        opid = int(opid)
+        price = float(price)
 
-    sql += "order by billing_id,account_id,country_id,operator_id,validity_date"
-    logger.info(sql)
-    cur.execute(sql)
-
-    l_data = list() #list of dict
-    rows = cur.fetchall()
-    for row in rows:
-        (idx,billing_id,account_id,company_name,account_name,product_name,cid,opid,price,currency,vd) = row
         cname = d_countries.get(cid)
         opname = d_operators.get(opid)
-        vd = vd.strftime("%Y-%m-%d")
+
+        ### get route
+        cur.execute(f"select * from pgfunc_get_route({product_id},{cid},{opid});")
+        provider_id = cur.fetchone()[0]
+
+        ### get buying price
+        cur.execute(f"select * from pgfunc_get_buying_price_vd({provider_id},{cid},{opid},'{vd}')")
+        buying_price = cur.fetchone()[0]
 
         d = {
             "id": idx,
@@ -1828,12 +1832,68 @@ def func_get_selling_price(billing_id=None):
             "country_name": cname,
             "operator_name": opname,
             "price": price,
+            "cost": buying_price,
             "currency": currency,
-            "validity_date": vd
+            "validity_date": vd 
         }
 
         l_data.append(d)
+
+    return l_data
+
+def func_get_selling_price(billing_id=None):
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    #### get today's selling price
+    sql = """select s.id,b.id as billing_id,s.account_id, b.company_name ,a.name as account_name,p.id as product_id, p.name as product_name,s.country_id,s.operator_id,
+            s.price,a.currency,s.validity_date
+            from selling_price s left join account a on s.account_id=a.id left join billing_account b on a.billing_id=b.id left join product p on a.product_id=p.id 
+            where date(validity_date) <= current_date and s.account_id != 4 and a.deleted=0 """
+    if billing_id:
+        sql += f" and a.billing_id={billing_id} "
+    sql += "order by billing_id,account_id,country_id,operator_id,validity_date"
+
+    logger.info(sql)
+    cur.execute(sql)
+
+    l_data = list() #list of dict
+
+    rows = cur.fetchall()
+    d_tmp = dict()
+    for row in rows:
+        (idx,billing_id,account_id,company_name,account_name,product_id,product_name,cid,opid,price,currency,vd) = row
+        ### keep the last entry ###
+        d_tmp[f"{billing_id}---{account_id}---{company_name}---{account_name}---{product_id}---{product_name}---{cid}---{opid}---{currency}"] = f"{idx}---{price}"
+
+    ### normalize the format of index to feed function
+    data_today = { f"{index}---{today}": d_tmp[index]  for index in d_tmp.keys()}
+    l_today = helper_get_route_price_info(data_today)
     
+    #### get future selling price if there is any
+    sql = """select s.id,b.id as billing_id,s.account_id, b.company_name ,a.name as account_name,p.id as product_id,p.name as product_name,s.country_id,s.operator_id,
+            s.price,a.currency,s.validity_date
+            from selling_price s left join account a on s.account_id=a.id left join billing_account b on a.billing_id=b.id left join product p on a.product_id=p.id 
+            where date(validity_date) > current_date and s.account_id != 4 and a.deleted=0 """
+    if billing_id:
+        sql += f"and a.billing_id={billing_id} "
+
+    sql += "order by billing_id,account_id,country_id,operator_id,validity_date"
+    logger.info(sql)
+    cur.execute(sql)
+    rows = cur.fetchall()
+    data_future = dict()
+    for row in rows:
+        (idx,billing_id,account_id,company_name,account_name,product_id,product_name,cid,opid,price,currency,vd) = row
+        ### for future price, keep all validity_date
+        vd = vd.strftime("%Y-%m-%d")
+        data_future[f"{billing_id}---{account_id}---{company_name}---{account_name}---{product_id}---{product_name}---{cid}---{opid}---{currency}---{vd}"] = f"{idx}---{price}"
+    
+    if data_future:
+        l_future = helper_get_route_price_info(data_future)
+        l_data = l_today + l_future
+    else:
+        l_data = l_today
+
     resp_json = dict()
 
     if len(l_data) > 0:
