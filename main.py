@@ -16,6 +16,7 @@ from email_validator import validate_email
 from collections import defaultdict
 import os
 import requests
+import datetime
 
 #import myutils
 from myutils import logger, read_comma_sep_lines, gen_udh_base, gen_udh, generate_otp
@@ -1203,12 +1204,12 @@ async def traffic_report(
     end_date = d_arg.get("end_date",None)
     if not start_date or not end_date: #default return past 7 days traffic
         sql = f"""select date, b.company_name,a.name as account_name,p.name as product_name,countries.name as country,
-        status,sum(sum_split),sum(sum_sell) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
+        status,sum(sum_split),sum(sum_sell),sum(sum_cost) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
         join product p on cdr_agg.product_id=p.id join countries on cdr_agg.country_id=countries.id where date >= current_date - interval '7 days' """
 
     else:
         sql = f"""select date, b.company_name,a.name as account_name,p.name as product_name,countries.name as country,
-        status,sum(sum_split),sum(sum_sell) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
+        status,sum(sum_split),sum(sum_sell),sum(sum_cost) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
         join product p on cdr_agg.product_id=p.id join countries on cdr_agg.country_id=countries.id where date between '{start_date}' and '{end_date}' """
 
     if account_id:
@@ -1221,12 +1222,17 @@ async def traffic_report(
     l_data = list()
     data_qty = defaultdict(dict) #2-dimention dict with sub-dict status => qty
     data_sell = defaultdict(float) #simple dict
-    final_total_qty, final_total_sell = 0,0
+    data_cost = defaultdict(float) #simple dict
+    final_total_qty, final_total_sell, final_total_cost = 0,0,0
 
     cur.execute(sql)
     rows = cur.fetchall()
     for row in rows:
-        (day,company_name,account_name,product_name,country,status,qty,sell) = row
+        (day,company_name,account_name,product_name,country,status,qty,sell,cost) = row
+        if not cost:
+            cost = 0
+        if not sell:
+            sell = 0
         day = day.strftime("%Y-%m-%d")
         if not status or status == '':
             status = 'Pending'
@@ -1236,9 +1242,11 @@ async def traffic_report(
             data_qty[f"{day}---{company_name}---{account_name}---{product_name}---{country}"][status] = qty
 
         data_sell[f"{day}---{company_name}---{account_name}---{product_name}---{country}"] += sell
+        data_cost[f"{day}---{company_name}---{account_name}---{product_name}---{country}"] += cost
 
         final_total_qty += qty
         final_total_sell += sell
+        final_total_cost += cost
 
     for key,d_status_qty in sorted(data_qty.items()):
         day,company_name,account_name,product_name,country = key.split('---')
@@ -1254,8 +1262,8 @@ async def traffic_report(
         d['product_name'] = product_name
         d['country'] = country
         d['total_sent'] = total_qty_per_country
-#        d['cost'] = total * 0.01 #TBD: get_selling_pricing
-        d['cost'] = f"{data_sell.get(key,0):,.3f}"
+        d['sell'] = f"{data_sell.get(key,0):,.3f}"
+        d['cost'] = f"{data_cost.get(key,0):,.3f}"
         l_data.append(d)
     
     if len(l_data) > 0:
@@ -1264,7 +1272,8 @@ async def traffic_report(
             "status": "Success",
             "count": len(l_data),
             "total_qty": f"{final_total_qty:,}",
-            "total_cost": f"{final_total_sell:,.3f}",
+            "total_sell": f"{final_total_sell:,.3f}",
+            "total_cost": f"{final_total_cost:,.3f}",
             "results": l_data
         }
     else:
@@ -1293,18 +1302,18 @@ async def transaction_report(
 
     if msgid:
         sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,operators.name as operator,
-                cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime from cdr 
+                cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime, sell, cost from cdr 
                 join billing_account on cdr.billing_id=billing_account.id join account on cdr.account_id=account.id 
                 join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where cdr.msgid='{msgid}' """
     else:
         if not start_date or not end_date: #default return past 7 days traffic
             sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,operators.name as operator,
-                    cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime from cdr 
+                    cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime, sell, cost from cdr 
                     join billing_account on cdr.billing_id=billing_account.id join account on cdr.account_id=account.id 
                     join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where cdr.dbtime > current_timestamp - interval '7 days' """
         else:
             sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,operators.name as operator,
-                    cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime from cdr 
+                    cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime, sell, cost from cdr 
                     join billing_account on cdr.billing_id=billing_account.id join account on cdr.account_id=account.id 
                     join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where date(cdr.dbtime) between '{start_date}' and '{end_date}' """
     
@@ -1325,7 +1334,7 @@ async def transaction_report(
     cur.execute(sql)
     rows = cur.fetchall()
     for row in rows:
-        (ts,company_name,account_name,msgid,tpoa,bnumber,country,operator,status,xms,udh,split,notif3_dbtime) = row
+        (ts,company_name,account_name,msgid,tpoa,bnumber,country,operator,status,xms,udh,split,notif3_dbtime, sell, cost) = row
         ts = ts.strftime("%Y-%m-%d, %H:%M:%S") #convert datetime.datetime obj to string
         d = {
             "timestamp": ts,
@@ -1340,7 +1349,8 @@ async def transaction_report(
             "xms": xms,
             "udh": udh,
             "split": 1,
-            "cost": 0.01,
+            "sell": sell,
+            #"cost": cost, # TBD, need to make sure CMI's customers don't see this
             "notif3_dbtime": notif3_dbtime
         }
 
@@ -1362,6 +1372,15 @@ async def transaction_report(
     
     return JSONResponse(status_code=200, content=resp_json)
 
+def date_range(date1, date2): #datetime.date
+    for n in range(int ((date2 - date1).days)+1):
+        yield date1 + datetime.timedelta(n)
+
+def str_to_date(d_str):
+  dt = datetime.datetime.strptime(d_str,"%Y-%m-%d")
+  d = datetime.date(dt.year,dt.month,dt.day)
+  return d
+
 @app.post("/iapi/internal/volume_chart") #optional arg: billing_id, account_id
 async def volume_chart(
     args: models.TrafficReportRequest = Body(
@@ -1375,10 +1394,20 @@ async def volume_chart(
     start_date = d_arg.get("start_date",None)
     end_date = d_arg.get("end_date",None)
     if not start_date or not end_date: #default return past 7 days traffic
+        start_date = datetime.date.today() - datetime.timedelta(7)
+        end_date = datetime.date.today()
         sql = f"""select date,b.company_name,sum(sum_split) from cdr_agg join billing_account b on cdr_agg.billing_id = b.id where date >= current_date - interval '7 days' """
 
     else:
         sql = f"""select date,b.company_name,sum(sum_split) from cdr_agg join billing_account b on cdr_agg.billing_id = b.id where date between '{start_date}' and '{end_date}' """
+        start_date = str_to_date(start_date)
+        end_date = str_to_date(end_date)
+
+    ### get the list of dates ###
+    l_dates = list()
+    for dt in date_range(start_date, end_date):
+        dt_str = dt.strftime("%Y-%m-%d")
+        l_dates.append(dt_str)
 
     if account_id:
         sql += f"and account_id = {account_id}"
@@ -1389,7 +1418,9 @@ async def volume_chart(
 
     l_data = list()
 
-    d1 = defaultdict(list) #company_name => [ day1---qty1, day2---qty2...]
+    d_tmp = defaultdict(dict) #company_name => day => qty
+
+#    d1 = defaultdict(list) #company_name => [ day1---qty1, day2---qty2...]
 
     cur.execute(sql)
     rows = cur.fetchall()
@@ -1397,17 +1428,28 @@ async def volume_chart(
         (day,company_name,qty) = row
         day = day.strftime("%Y-%m-%d")
 
-        d1[company_name].append(f"{day}---{qty}")
+        d_tmp[company_name][day] = qty
+
+#        d1[company_name].append(f"{day}---{qty}")
+#     for company_name,l_v in sorted(d1.items()):
+#        l1 = list()
+#        for v in l_v:
+#            day,qty = v.split('---')
+#            d = {
+#                "x": day,
+#                "y": qty
+#            }
+#
+#            l1.append(d)
    
-    for company_name,l_v in sorted(d1.items()):
+    for company_name,d_day in sorted(d_tmp.items()):
         l1 = list()
-        for v in l_v:
-            day,qty = v.split('---')
+        for day in l_dates:
             d = {
                 "x": day,
-                "y": qty
+                "y": d_day.get(day,0)
             }
-
+            
             l1.append(d)
 
         d_company = {
@@ -1435,7 +1477,7 @@ async def volume_chart(
     return JSONResponse(status_code=200, content=resp_json)
 
 @app.post("/iapi/internal/cost_chart") #optional arg: billing_id, account_id
-async def volume_chart(
+async def cost_chart(
     args: models.TrafficReportRequest = Body(
         ...,
         examples = models.example_traffic_report_request,
@@ -1629,7 +1671,7 @@ def func_get_campaign_report(billing_id=None):
         }
 
         if cpg_status == "SENT": #check status, TBD: query from cdr_agg
-            sql = f"""select status,sum(split),sum(selling_price) from cdr where cpg_id={cpg_id} group by status;"""
+            sql = f"""select status,sum(split),sum(sell) from cdr where cpg_id={cpg_id} group by status;"""
             cur.execute(sql)
             total_qty,total_cost = 0,0
             rows = cur.fetchall()
