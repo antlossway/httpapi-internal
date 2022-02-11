@@ -1841,7 +1841,7 @@ def helper_get_route_price_info(d):
 
     return l_data
 
-def func_get_selling_price(billing_id=None):
+def func_get_selling_price(arg_billing_id=None):
 
     today = datetime.date.today().strftime("%Y-%m-%d")
     #### get today's selling price
@@ -1849,8 +1849,8 @@ def func_get_selling_price(billing_id=None):
             s.price,a.currency,s.validity_date
             from selling_price s left join account a on s.account_id=a.id left join billing_account b on a.billing_id=b.id left join product p on a.product_id=p.id 
             where date(validity_date) <= current_date and s.account_id != 4 and a.deleted=0 """
-    if billing_id:
-        sql += f" and a.billing_id={billing_id} "
+    if arg_billing_id:
+        sql += f" and a.billing_id={arg_billing_id} "
     sql += "order by billing_id,account_id,country_id,operator_id,validity_date"
 
     logger.info(sql)
@@ -1874,8 +1874,8 @@ def func_get_selling_price(billing_id=None):
             s.price,a.currency,s.validity_date
             from selling_price s left join account a on s.account_id=a.id left join billing_account b on a.billing_id=b.id left join product p on a.product_id=p.id 
             where date(validity_date) > current_date and s.account_id != 4 and a.deleted=0 """
-    if billing_id:
-        sql += f"and a.billing_id={billing_id} "
+    if arg_billing_id:
+        sql += f"and a.billing_id={arg_billing_id} "
 
     sql += "order by billing_id,account_id,country_id,operator_id,validity_date"
     logger.info(sql)
