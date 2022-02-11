@@ -1476,8 +1476,8 @@ async def volume_chart(
     
     return JSONResponse(status_code=200, content=resp_json)
 
-@app.post("/iapi/internal/cost_chart") #optional arg: billing_id, account_id
-async def cost_chart(
+@app.post("/iapi/internal/sell_chart") #optional arg: billing_id, account_id
+async def sell_chart(
     args: models.TrafficReportRequest = Body(
         ...,
         examples = models.example_traffic_report_request,
@@ -1489,10 +1489,20 @@ async def cost_chart(
     start_date = d_arg.get("start_date",None)
     end_date = d_arg.get("end_date",None)
     if not start_date or not end_date: #default return past 7 days traffic
+        start_date = datetime.date.today() - datetime.timedelta(7)
+        end_date = datetime.date.today()
         sql = f"""select date,b.company_name,sum(sum_sell) from cdr_agg join billing_account b on cdr_agg.billing_id = b.id where date >= current_date - interval '7 days' """
 
     else:
         sql = f"""select date,b.company_name,sum(sum_sell) from cdr_agg join billing_account b on cdr_agg.billing_id = b.id where date between '{start_date}' and '{end_date}' """
+        start_date = str_to_date(start_date)
+        end_date = str_to_date(end_date)
+
+    ### get the list of dates ###
+    l_dates = list()
+    for dt in date_range(start_date, end_date):
+        dt_str = dt.strftime("%Y-%m-%d")
+        l_dates.append(dt_str)
 
     if account_id:
         sql += f"and account_id = {account_id}"
@@ -1502,33 +1512,34 @@ async def cost_chart(
     logger.info(sql)
 
     l_data = list()
-    d1 = defaultdict(list) #company_name => [ day1---qty1, day2---qty2...]
+
+    d_tmp = defaultdict(dict) #company_name => day => qty
 
     cur.execute(sql)
     rows = cur.fetchall()
     for row in rows:
-        (day,company_name,qty) = row #qty = sell
+        (day,company_name,sell) = row
         day = day.strftime("%Y-%m-%d")
-        qty = round(float(qty) , 3) 
 
-        d1[company_name].append(f"{day}---{qty}")
+        d_tmp[company_name][day] = sell
    
-    for company_name,l_v in sorted(d1.items()):
+    for company_name,d_day in sorted(d_tmp.items()):
         l1 = list()
-        for v in l_v:
-            day,qty = v.split('---')
+        for day in l_dates:
+            sell = d_day.get(day,0)
             d = {
                 "x": day,
-                "y": qty
+                "y": f"{sell:,.2f}"
             }
-
+            
             l1.append(d)
-        d = {
+
+        d_company = {
             "name": company_name,
             "data": l1
         }
 
-        l_data.append(d)
+        l_data.append(d_company)
     
     
     if len(l_data) > 0:
@@ -1546,6 +1557,7 @@ async def cost_chart(
         return JSONResponse(status_code=404, content=resp_json)
     
     return JSONResponse(status_code=200, content=resp_json)
+
 
 #@app.post("/iapi/internal/cpg_report") #optional arg: billing_id, account_id
 #async def campaign_report(
