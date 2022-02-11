@@ -405,10 +405,10 @@ async def get_all_billing_accounts():
     return JSONResponse(status_code=200, content=resp_json)
 
 @app.get("/iapi/internal/billing/{billing_id}") # get billing account info
-async def get_billing_account_info(billing_id: int):
+async def get_billing_account_info(arg_billing_id: int):
     cur.execute(f"""
     select id,company_name,company_address,country,city,postal_code,contact_name,billing_email,
-    contact_number,billing_type,currency,live,ip_list from billing_account where deleted=0 and id=%s""",(billing_id,))
+    contact_number,billing_type,currency,live,ip_list from billing_account where deleted=0 and id=%s""",(arg_billing_id,))
 
     try:
         row = cur.fetchone()
@@ -445,8 +445,8 @@ async def get_billing_account_info(billing_id: int):
 
 # use responses to add additional response like returning errors
 @app.get("/iapi/internal/account/{billing_id}") #get all accounts for a billing account
-def get_accounts_by_billing_id(billing_id: int):
-    result = func_get_all_accounts(billing_id)
+def get_accounts_by_billing_id(arg_billing_id: int):
+    result = func_get_all_accounts(arg_billing_id)
     return result
 
 
@@ -456,13 +456,13 @@ def get_all_accounts():
     return result
 
 
-def func_get_all_accounts(billing_id=None):
+def func_get_all_accounts(arg_billing_id=None):
     sql = """select a.billing_id,b.company_name,a.id as account_id,a.name as account_name,a.product_id,p.name as product_name,a.live,
     a.connection_type, a.systemid,a.password,a.api_key,a.api_secret,a.callback_url,a.comment from account a join billing_account b on b.id=a.billing_id 
     join product p on a.product_id = p.id where a.deleted=0"""
 
-    if billing_id:
-        sql += f"and a.billing_id={billing_id};"
+    if arg_billing_id:
+        sql += f"and a.billing_id={arg_billing_id};"
     logger.info(sql)
     cur.execute(sql)
 
@@ -514,26 +514,27 @@ def get_all_webusers():
     return result
 
 @app.get("/iapi/internal/webuser/{billing_id}")#get all webuser of one billing account
-def get_webusers_by_billing_id(billing_id:int):
+def get_webusers_by_billing_id(arg_billing_id:int):
 
-    result = func_get_webusers(billing_id)
+    result = func_get_webusers(arg_billing_id)
     return result
 
-def func_get_webusers(billing_id=None):
-    sql = f"""select u.id as webuser_id,u.username,u.email,u.bnumber,b.company_name,u.role_id,r.name as role_name,
+def func_get_webusers(arg_billing_id=None):
+    sql = f"""select u.billing_id,u.id as webuser_id,u.username,u.email,u.bnumber,b.company_name,u.role_id,r.name as role_name,
     u.live from webuser u join billing_account b on u.billing_id=b.id join webrole r on r.id=u.role_id 
     where u.deleted=0"""
     
-    if billing_id:
-        sql += f" and u.billing_id={billing_id};"
+    if arg_billing_id:
+        sql += f" and u.billing_id={arg_billing_id};"
     cur.execute(sql)
     logger.info(sql)
 
     l_data = list() #list of dict
     rows = cur.fetchall()
     for row in rows:
-        (webuser_id,username,email,bnumber,company_name,role_id,role_name,live) = row
+        (billing_id,webuser_id,username,email,bnumber,company_name,role_id,role_name,live) = row
         d = {
+            "billing_id": billing_id,
             "webuser_id": webuser_id,
             "username": username,
             "email": email,
@@ -1155,9 +1156,9 @@ async def get_auditlog():
 
 @app.get("/iapi/internal/audit/{billing_id}", response_model=models.GetAuditResponse,
         responses={404: {"model": models.MsgNotFound}})
-async def get_auditlog_by_billing_id(billing_id:int):
+async def get_auditlog_by_billing_id(arg_billing_id:int):
     cur.execute(f"""select a.creation_time,u.username,a.auditlog,b.company_name from audit a 
-                join webuser u on a.webuser_id = u.id join billing_account b on u.billing_id = b.id where u.billing_id={billing_id} order by a.creation_time desc limit 100;""")
+                join webuser u on a.webuser_id = u.id join billing_account b on u.billing_id = b.id where u.billing_id={arg_billing_id} order by a.creation_time desc limit 100;""")
 
     rows = cur.fetchall()
     l_data = list()
@@ -1641,19 +1642,15 @@ async def get_all_campaign_report():
     return result
 
 @app.get("/iapi/internal/cpg_report/{billing_id}") #return all campaign of this billing account
-async def get_campaign_report_by_billing_id(billing_id: int):
-#    sql = f"""select n.cpg_id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,b.company_name,a.name as account_name,p.name as product_name,cpg.xms,count(*) from cpg_blast_list n               join cpg on n.cpg_id=cpg.id join billing_account b on cpg.billing_id=b.id join account a on cpg.account_id=a.id join product p on cpg.product_id=p.id 
-#                where n.field_name='number' """
-
-#    sql += "group by n.cpg_id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,b.company_name,account_name,product_name,cpg.xms;"
+async def get_campaign_report_by_billing_id(arg_billing_id: int):
     
-    result = func_get_campaign_report(billing_id)
+    result = func_get_campaign_report(arg_billing_id)
     return result
 
-def func_get_campaign_report(billing_id=None):
+def func_get_campaign_report(arg_billing_id=None):
     sql = f"""select cpg.id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,cpg.xms,b.company_name,a.name as account_name,p.name as product_name from cpg join billing_account b on cpg.billing_id=b.id join account a on cpg.account_id=a.id join product p on cpg.product_id=p.id """
-    if billing_id:
-        sql += f" where cpg.billing_id={billing_id};"
+    if arg_billing_id:
+        sql += f" where cpg.billing_id={arg_billing_id};"
     logger.info(sql)
 
     l_data = list()
@@ -1790,8 +1787,8 @@ def get_all_selling_price():
     return result
 
 @app.get("/iapi/internal/selling_price/{billing_id}") #get selling price for all accounts belong to this billing_id
-def get_selling_price_by_billing_id(billing_id: int):
-    result = func_get_selling_price(billing_id)
+def get_selling_price_by_billing_id(arg_billing_id: int):
+    result = func_get_selling_price(arg_billing_id)
     return result
 
 def helper_get_route_price_info(d):
