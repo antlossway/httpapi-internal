@@ -723,8 +723,11 @@ async def insert_record(
                 return JSONResponse(status_code=500,content=resp_json)
 
         name = data_obj.name.strip() #smpp_account.name should be unique
-        ## remove any special char, replace space with _
-        name = re.sub(r'\s',r'_', name) #abc xyz => abc_xyz
+        name = re.sub(r'[^a-zA-Z0-9 ]',r'',name) # only allow [a-zA-Z0-9] and space
+        name = re.sub(r'\s+',r'_', name) #replace continuous space with _  e.g "abc   xyz" => abc_xyz
+        name = name[:20] #truncate after 20 char
+        name = re.sub(r'_$','',name) #remove ending _
+ 
         existing_id = None
         cur.execute("select id from account where name=%s", (name,))
         try:
@@ -781,22 +784,26 @@ async def insert_record(
     d_data = data_obj.dict()
 
     if table == 'account' and conn_type == 'smpp': # generate systemid/password/directory/notif3_dir
-        name = d_data.get('name')
+        name = d_data.get('name') #max 20 char
         ## create directory, notif_dir
         ext = generate_otp('lower',4) #give a random extension to avoid same subdir name, e.g abc4567
         systemid = name[:12]
-        systemid = f"{re.sub(r'_$','',systemid)}_{ext}"
+        systemid = f"{re.sub(r'_$','',systemid)}_{ext}" # systemid: max 16 char
         subdir = systemid.upper()
-        basedir = os.path.abspath(os.path.dirname(__file__))
-        directory = os.path.join(basedir, f"../sendxms/SERVER_SUPER100/received/{subdir}") #/home/amx/sendxms/SERVER_SUPER100
-        notif3_dir = os.path.join(basedir, f"../sendxms/SERVER_SUPER100/spool/{subdir}")
+
+        script_dir = os.path.abspath(os.path.dirname(__file__)) # /home/amx/httpapi/
+        basedir = os.path.dirname(script_dir) # /home/amx/httpapi => /home/amx/
+        directory = os.path.join(basedir, f"sendxms/SERVER_SUPER100/received/{subdir}") #/home/amx/sendxms/SERVER_SUPER100/received/XXXX
+        notif3_dir = os.path.join(basedir, f"sendxms/SERVER_SUPER100/spool/{subdir}") #/home/amx/sendxms/SERVER_SUPER100/spool/XXXX
         d_data['directory'] = directory
         d_data['notif3_dir'] = notif3_dir 
+
         ## create systemid, password
         password = generate_otp('alphanumeric',8)
 
         d_data['systemid'] = systemid
         d_data['password'] = password
+
         logger.info(f"debug smpp_account: {json.dumps(d_data,indent=4)}")
     elif table == 'account' and conn_type == 'http': # generate api_key/api_secret
         api_key = generate_otp('alphanumeric',20)
@@ -831,7 +838,8 @@ async def insert_record(
         # city,postal_code,billing_email) values (%s,%s,%s,%s,%s,%s,%s,%s) returning id""",
         # (data['company_name'],data['contact_name'],data['billing_type'],data['company_address'],data['country'],data['city'],data['postal_code'],data['billing_email'])
         # )
-        new_id = cur.execute(sql)
+        #new_id = cur.execute(sql)
+        cur.execute(sql)
         try: 
             new_id = cur.fetchone()[0]
             if new_id:
@@ -844,6 +852,31 @@ async def insert_record(
 
                 ## update all qrouter
                 if table == "account":
+                    account_id = new_id
+                    product_id = d_data.get("product_id")
+                    today = datetime.date.today().strftime("%Y-%m-%d")
+
+                    logger.info(f"##### new account {account_id} insert template selling price #####")
+                    template_price = dict()
+                    sql = f"""select country_id,operator_id,price,validity_date from selling_price_template where product_id={product_id} 
+                                 order by country_id,operator_id,validity_date"""
+                    cur.execute(sql)
+                    logger.info(sql)
+                    rows = cur.fetchall()
+                    for row in rows:
+                        (cid,opid,price,vd) = row
+                        template_price[f"{cid}---{opid}"] = price
+
+                    #### insert template selling price into selling_price table ###
+                    for index,price in template_price.items():
+                        (cid,opid) = index.split("---")
+                        cid = int(cid)
+                        opid = int(opid)
+                        sql = f"insert into selling_price (account_id,country_id,operator_id,price,validity_date) values ({account_id},{cid},{opid},{price},'{today}');"
+                        logger.info(sql)
+                        cur.execute(sql)
+                        logger.info(f"--- inserted {cur.rowcount}")
+
                     logger.info("#### processctl update allqrouter ###")
                     try:
                         result = os.system("/home/amx/script/processctl.pl update allqrouter")
@@ -853,10 +886,18 @@ async def insert_record(
                             logger.warning("update allqrouter failed")
                     except:
                         pass
+            else:
+                resp_json = {
+                    "errorcode":2,
+                    "status": f"!!! insert {table} ok, but no new id returned, check what happends"
+                }
+                logger.info(f"reply internal insert: {json.dumps(resp_json,indent=4)}")
+                return JSONResponse(status_code=500, content=resp_json)
+
         except Exception as err:
             resp_json = {
                 "errorcode":2,
-                "status": f"insert {table} failure, no new id returned: {err}"
+                "status": f"!!! insert {table} failure, no new id returned: {err}"
             }
             logger.info(f"reply internal insert: {json.dumps(resp_json,indent=4)}")
             return JSONResponse(status_code=500, content=resp_json)
@@ -871,10 +912,8 @@ async def insert_record(
         #raise HTTPException(status_code=500, detail={"errocode": 2, "status": f"insert DB error: {err}"})
         return JSONResponse(status_code=500, content=resp_json)      
     
-    logger.info("### reply internal insert: {json.dumps(resp_json,indent=4)}")
+    logger.info(f"### reply internal insert: {json.dumps(resp_json,indent=4)}")
     return JSONResponse(status_code=200,content=resp_json)
-
-
 
 @app.post("/iapi/internal/update", 
 #response_model=models.InsertResponse, 

@@ -162,7 +162,7 @@ class InsertAudit(BaseModel):
 
 class InsertSMPPAccount(BaseModel):
     billing_id: int
-    name: str = Field(description="only letters and digits, no special characters")
+    name: str = Field(description="only letters and digits, no special characters, max 20 char")
     product_id: int
     connection_type: str
     comment: Optional[str] = Field(description="add note to describe this account")
@@ -172,7 +172,7 @@ class InsertSMPPAccount(BaseModel):
 
 class InsertHTTPAccount(BaseModel):
     billing_id: int
-    name: str = Field(description="only letters and digits, no special characters")
+    name: str = Field(description="only letters and digits, no special characters, max 20 char")
     product_id: int
     connection_type: str
     ## for http
