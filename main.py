@@ -1952,3 +1952,107 @@ def func_get_selling_price(arg_billing_id=None):
  
     return JSONResponse(status_code=200, content=resp_json)
 
+def helper_get_buying_price(arg_data):
+
+    l_data = list()
+    if arg_data:
+
+        d_countries = get_countries()
+        d_operators = get_operators()
+    
+        for index, v in sorted(arg_data.items()):
+            (provider_id,provider_name,cid,opid,currency,vd) = index.split("---")
+            (idx,price) = v.split("---")
+            idx = int(idx)
+            provider_id = int(provider_id)
+            cid = int(cid)
+            opid = int(opid)
+            price = float(price)
+    
+            cname = d_countries.get(cid)
+            opname = d_operators.get(opid)
+    
+            d = {
+                "id": idx,
+                "provider_id": provider_id,
+                "provider_name": provider_name,
+                "country_name": cname,
+                "operator_name": opname,
+                "cost": price,
+                "currency": currency,
+                "validity_date": vd 
+            }
+    
+            l_data.append(d)
+
+    return l_data
+
+
+@app.get("/iapi/internal/cost_price")#get all buying_price
+def get_all_buying_price():
+    result = func_get_buying_price()
+    return result
+
+def func_get_buying_price():
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    #### get today's buying price
+    logger.info("### get latest buying price up to today ###")
+    sql = """select b.id,b.provider_id,provider.name as provider_name,b.country_id,b.operator_id,b.price,provider.currency,b.validity_date from buying_price b
+            join provider on b.provider_id = provider.id where date(validity_date) <= current_date """
+    sql += " order by provider_id,country_id,operator_id,validity_date"
+
+    logger.info(sql)
+    cur.execute(sql)
+
+    rows = cur.fetchall()
+    d_tmp = dict()
+    for row in rows:
+        (idx,provider_id,provider_name,cid,opid,price,currency,vd) = row
+        ### keep the last entry ###
+        d_tmp[f"{provider_id}---{provider_name}---{cid}---{opid}---{currency}"] = f"{idx}---{price}"
+
+    ### normalize the format of index to feed function
+    data_today = { f"{index}---{today}": d_tmp[index]  for index in d_tmp.keys()}
+    l_today = helper_get_buying_price(data_today)
+ 
+    #### get future buying price if there is any
+    logger.info("### get future buying price if there is any ###")
+    sql = """select b.id,b.provider_id,provider.name as provider_name,b.country_id,b.operator_id,b.price,provider.currency,b.validity_date from buying_price b
+            join provider on b.provider_id = provider.id where date(validity_date) > current_date """
+    sql += " order by provider_id,country_id,operator_id,validity_date"
+
+    logger.info(sql)
+    cur.execute(sql)
+
+    rows = cur.fetchall()
+    data_future = dict()
+    for row in rows:
+        (idx,provider_id,provider_name,cid,opid,price,currency,vd) = row
+        ### for future price, keep all validity_date
+        vd = vd.strftime("%Y-%m-%d")
+        data_future[f"{provider_id}---{provider_name}---{cid}---{opid}---{currency}---{vd}"] = f"{idx}---{price}"
+    
+    l_future = helper_get_buying_price(data_future)
+    l_data = l_today + l_future
+
+    resp_json = dict()
+
+    if len(l_data) > 0:
+        resp_json = {
+            "errorcode":0,
+            "status": "Success",
+            "results": l_data
+        }
+    else:
+        resp_json = {
+            "errorcode": 1,
+            "status":"No buying price found!"
+        }
+        return JSONResponse(status_code=404, content=resp_json)
+
+    logger.info("### reply internal UI:")
+    logger.info(json.dumps(resp_json, indent=4))
+ 
+    return JSONResponse(status_code=200, content=resp_json)
+
