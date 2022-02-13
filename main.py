@@ -2013,7 +2013,7 @@ def func_get_buying_price():
     #### get today's buying price
     logger.info("### get latest buying price up to today ###")
     sql = """select b.id,b.provider_id,provider.name as provider_name,b.country_id,b.operator_id,b.price,provider.currency,b.validity_date from buying_price b
-            join provider on b.provider_id = provider.id where date(validity_date) <= current_date """
+            join provider on b.provider_id = provider.id where date(validity_date) <= current_date and b.provider_id != 4 """
     sql += " order by provider_id,country_id,operator_id,validity_date"
 
     logger.info(sql)
@@ -2033,7 +2033,7 @@ def func_get_buying_price():
     #### get future buying price if there is any
     logger.info("### get future buying price if there is any ###")
     sql = """select b.id,b.provider_id,provider.name as provider_name,b.country_id,b.operator_id,b.price,provider.currency,b.validity_date from buying_price b
-            join provider on b.provider_id = provider.id where date(validity_date) > current_date """
+            join provider on b.provider_id = provider.id where date(validity_date) > current_date and b.provider_id != 4 """
     sql += " order by provider_id,country_id,operator_id,validity_date"
 
     logger.info(sql)
