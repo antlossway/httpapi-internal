@@ -1952,6 +1952,17 @@ def func_get_selling_price(arg_billing_id=None):
  
     return JSONResponse(status_code=200, content=resp_json)
 
+def get_mapping_provider_id_product_id(): #provider_id => product_id
+    d = dict()
+    sql = "select c.provider_id,c.product_id,product.name as product_name from customer_operator_routing c join product on c.product_id = product.id where c.product_id!=4;"
+    logger.info(sql)
+    cur.execute(sql)
+    rows = cur.fetchall()
+    for row in rows:
+        (provider_id,product_id,product_name) = row
+        d[provider_id] = f"{product_id}---{product_name}"
+    return d
+
 def helper_get_buying_price(arg_data):
 
     l_data = list()
@@ -1959,6 +1970,8 @@ def helper_get_buying_price(arg_data):
 
         d_countries = get_countries()
         d_operators = get_operators()
+ 
+        d_provider_product = get_mapping_provider_id_product_id()
     
         for index, v in sorted(arg_data.items()):
             (provider_id,provider_name,cid,opid,currency,vd) = index.split("---")
@@ -1971,14 +1984,15 @@ def helper_get_buying_price(arg_data):
     
             cname = d_countries.get(cid)
             opname = d_operators.get(opid)
+
+            (product_id,product_name) = d_provider_product.get(provider_id).split("---")
     
             d = {
-                "id": idx,
-                "provider_id": provider_id,
-                "provider_name": provider_name,
+                #"id": idx,
+                "product_name": product_name,
                 "country_name": cname,
                 "operator_name": opname,
-                "cost": price,
+                "price": price,
                 "currency": currency,
                 "validity_date": vd 
             }
