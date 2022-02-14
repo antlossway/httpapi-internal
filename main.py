@@ -71,38 +71,68 @@ async def create_campaign(
     ),
 ):
 
-    # blast_list: List[str]
-    # cpg_name: str
-    # cpg_tpoa: str
-    # cpg_xms: str
-    # billing_id: int
-    # account_id: int
-    # product_id: int
+#    billing_id: int
+#    account_id: int
+#    blast_list: List[str]
+#    cpg_name: str
+#    cpg_tpoa: str
+#    cpg_xms: str
+#    admin_webuser_id: Optional[int]
+#    cpg_schedule: Optional[str] # 2022-02-15, 15:47:00
+
     logger.info(f"{request.url.path}: from {request.client.host}")
     
     blast_list = arg_new_cpg.blast_list
-    l_data = read_comma_sep_lines(blast_list)
+    l_data = read_comma_sep_lines(blast_list) #None for no valid number or file content format issue
     if not l_data: #None, means no valid bnumber
-        raise HTTPException(status_code=422, detail=f"no valid entry")
+        resp_json = {
+            "errorcode": 8,
+            "errormsg": f"No valid B-number found"
+        }
+        logger.info("### new cpg reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
+ 
+        return JSONResponse(status_code=422, content=resp_json)
+        #raise HTTPException(status_code=422, detail=f"no valid MSISDN")
     elif l_data == -1:
-        raise HTTPException(status_code=422, detail=f"issue with the format of blast list content")
+        resp_json = {
+            "errorcode": 9,
+            "errormsg": f"wrong format of blast list content"
+        }
+        logger.info("### new cpg reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
+ 
+        return JSONResponse(status_code=422, content=resp_json)
+        #raise HTTPException(status_code=422, detail=f"issue with the format of blast list content")
     else:
         cpg_name = arg_new_cpg.cpg_name
         tpoa = arg_new_cpg.cpg_tpoa
         xms = arg_new_cpg.cpg_xms
         billing_id = arg_new_cpg.billing_id
         account_id = arg_new_cpg.account_id
-        product_id = arg_new_cpg.product_id
+        admin_webuser_id = arg_new_cpg.admin_webuser_id
+        cpg_schedule = arg_new_cpg.cpg_schedule
 
         cpg_name = re.sub(r"'",r"''",cpg_name)
         tpoa = re.sub(r"'",r"''",tpoa)
         xms = re.sub(r"'",r"''",xms)
 
-        sql = f"""insert into cpg (name,tpoa,billing_id,account_id,product_id,xms) values 
-                ('{cpg_name}','{tpoa}',{billing_id},{account_id},{product_id},'{xms}') returning id;"""
+        sql = f"""insert into cpg (name,tpoa,billing_id,account_id,admin_webuser_id,xms) values 
+                ('{cpg_name}','{tpoa}',{billing_id},{account_id},{admin_webuser_id},'{xms}') returning id;"""
+
         logger.debug(sql)
         cur.execute(sql)
-        cpg_id = cur.fetchone()[0]
+        try:
+            cpg_id = cur.fetchone()[0]
+        except:
+            resp_json = {
+                "errorcode": 10,
+                "errormsg": f"!!! insert into cpg table error, no new cpg_id returned"
+            }
+            logger.info("### new cpg reply UI:")
+            logger.info(json.dumps(resp_json, indent=4))
+ 
+            return JSONResponse(status_code=500, content=resp_json)
 
         for d in l_data:
             hash_value = d.get('hash',None)
@@ -115,6 +145,36 @@ async def create_campaign(
                         cur.execute(sql)
                     except Exception as err:
                         logger.debug(f"!!! insertion error {err}")
+                        resp_json = {
+                           "errorcode": 11,
+                           "errormsg": f"!!! insert into cpg_blast_list table error"
+                        }
+                        sql = f"update cpg set status='ERROR' where id={cpg_id}"
+                        logger.debug(sql)
+                        cur.execute(sql)
+                        logger.info("### new cpg reply UI:")
+                        logger.info(json.dumps(resp_json, indent=4))
+ 
+                        return JSONResponse(status_code=500, content=resp_json)
+        if cpg_schedule:
+            try:
+                sql = f"update cpg set sending_time='{cpg_schedule}',status='TO_SEND' where id={cpg_id}"
+                logger.debug(sql)
+                cur.execute(sql)
+            except: #likely time format wrong
+                resp_json = {
+                   "errorcode": 12,
+                   "errormsg": f"!!! update cpg sending_time error, check time format"
+                }
+                sql = f"update cpg set status='ERROR' where id={cpg_id}"
+                cur.execute(sql)
+                logger.debug(sql)
+
+                logger.info("### new cpg reply UI:")
+                logger.info(json.dumps(resp_json, indent=4))
+ 
+                return JSONResponse(status_code=500, content=resp_json)
+
         resp_json = {
             'cpg_id': cpg_id,
             'count_valid_entry': len(l_data)
@@ -123,6 +183,138 @@ async def create_campaign(
     logger.info("### reply UI:")
     logger.info(json.dumps(resp_json, indent=4))
  
+    return JSONResponse(status_code=200, content=resp_json)
+
+@app.delete('/iapi/internal/cpg/{cpg_id}') # delete cpg
+async def delete_campaign(cpg_id: int):
+
+    ## can not delete for status "SENDING" or "SENT"
+    l_cannot_delete = ['SENDING','SENT']
+    cur.execute(f"select status from cpg where id={cpg_id}")
+    try:
+        status = cur.fetchone()[0]
+    except:
+        resp_json = {
+            "errorcode": 1,
+            "errormsg": f"No campaign found with id {cpg_id}"
+        }
+        logger.info("### new cpg reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
+ 
+        return JSONResponse(status_code=422, content=resp_json)
+    
+    if status in l_cannot_delete:
+        resp_json = {
+            "errorcode": 1,
+            "errormsg": f"can not delete campaign when status in {l_cannot_delete}"
+        }
+        logger.info("### new cpg reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
+ 
+        return JSONResponse(status_code=422, content=resp_json)
+    
+    sql = f"delete from cpg where id={cpg_id}"
+    logger.info(sql)
+    cur.execute(sql)
+
+    sql = f"delete from cpg_blast_list where cpg_id={cpg_id}"
+    logger.info(sql)
+    cur.execute(sql)
+
+    resp_json = {
+        "errorcode":0,
+        "status": "Delete Success",
+        'cpg_id': cpg_id,
+    }
+
+    logger.info("### reply UI:")
+    logger.info(json.dumps(resp_json, indent=4))
+ 
+    return JSONResponse(status_code=200, content=resp_json)
+
+@app.get("/iapi/internal/cpg_report") #return all campaign
+async def get_all_campaign_report():
+    result = func_get_campaign_report()
+    return result
+
+@app.get("/iapi/internal/cpg_report/{billing_id}") #return all campaign of this billing account
+async def get_campaign_report_by_billing_id(billing_id: int):
+    
+    result = func_get_campaign_report(billing_id)
+    return result
+
+def func_get_campaign_report(arg_billing_id=None):
+    sql = f"""select cpg.id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,cpg.xms,b.company_name,a.name as account_name,p.name as product_name, 
+            webuser.username as admin_webuser_name from cpg join billing_account b on cpg.billing_id=b.id join account a on cpg.account_id=a.id join product p on a.product_id=p.id 
+            join webuser on cpg.admin_webuser_id=webuser.id """
+            
+    if arg_billing_id:
+        sql += f" where cpg.billing_id={arg_billing_id};"
+    logger.info(sql)
+
+    l_data = list()
+    data = defaultdict(dict)
+
+    cur.execute(sql)
+    rows = cur.fetchall()
+    for row in rows:
+        (cpg_id,cpg_name,cpg_status,creation_time,sending_time,tpoa,content,company_name,account_name,product_name,admin_webuser_name) = row
+        creation_time = creation_time.strftime("%Y-%m-%d, %H:%M:%S")
+        try:
+            sending_time = sending_time.strftime("%Y-%m-%d, %H:%M:%S")
+        except:
+            sending_time = ""
+
+        d = {
+            "cpg_id": cpg_id,
+            "cpg_name": cpg_name,
+            "status": cpg_status,
+            "creation_time": creation_time,
+            "sending_time": sending_time,
+            "tpoa": tpoa,
+            "content": content,
+            "company_name": company_name,
+            "account_name": account_name,
+            "product_name": product_name,
+            "admin_webuser_name":admin_webuser_name
+        }
+
+        if cpg_status == "SENT": #check status, TBD: query from cdr_agg
+            sql = f"""select status,sum(split),sum(sell) from cdr where cpg_id={cpg_id} group by status;"""
+            cur.execute(sql)
+            total_qty,total_cost = 0,0
+            rows = cur.fetchall()
+            for row in rows:
+                (status,qty,cost) = row
+                if not status or status == '':
+                    status = 'Pending'
+
+                d[status] = qty
+                total_qty += qty
+                total_cost += cost
+
+            d["total_sent"] = total_qty
+            d["cost"] = f"{total_cost:,.2f}"
+    
+        l_data.append(d)
+    
+    if len(l_data) > 0:
+        resp_json = {
+            "errorcode" : 0,
+            "status": "Success",
+            "count": len(l_data),
+            "results": l_data
+        }
+    else:
+        resp_json = {
+            "errorcode": 1,
+            "status":"No Record found!"
+        }
+        return JSONResponse(status_code=404, content=resp_json)
+    
+    logger.info("### reply client:")
+    logger.info(json.dumps(resp_json, indent=4))
+    
     return JSONResponse(status_code=200, content=resp_json)
 
 
@@ -1341,6 +1533,7 @@ async def transaction_report(
     account_id = d_arg.get("account_id")
     start_date = d_arg.get("start_date",None)
     end_date = d_arg.get("end_date",None)
+    cpg_id = d_arg.get("cpg_id")
 
     if msgid:
         sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,operators.name as operator,
@@ -1348,27 +1541,36 @@ async def transaction_report(
                 join billing_account on cdr.billing_id=billing_account.id join account on cdr.account_id=account.id 
                 join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where cdr.msgid='{msgid}' """
     else:
-        if not start_date or not end_date: #default return past 7 days traffic
-            sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,operators.name as operator,
-                    cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime, sell, cost from cdr 
-                    join billing_account on cdr.billing_id=billing_account.id join account on cdr.account_id=account.id 
-                    join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where cdr.dbtime > current_timestamp - interval '7 days' """
-        else:
-            sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,operators.name as operator,
-                    cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime, sell, cost from cdr 
-                    join billing_account on cdr.billing_id=billing_account.id join account on cdr.account_id=account.id 
-                    join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where date(cdr.dbtime) between '{start_date}' and '{end_date}' """
+        if not cpg_id:
+            if not start_date or not end_date: #default return past 7 days traffic
+                sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,
+                        operators.name as operator,
+                        cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime, sell, cost from cdr 
+                        join billing_account on cdr.billing_id=billing_account.id join account on cdr.account_id=account.id 
+                        join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where cdr.dbtime > current_timestamp - interval '7 days' """
+            else:
+                sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,
+                        operators.name as operator,
+                        cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime, sell, cost from cdr 
+                        join billing_account on cdr.billing_id=billing_account.id join account on cdr.account_id=account.id 
+                        join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where date(cdr.dbtime) between '{start_date}' and '{end_date}' """
+        
+            if account_id:
+                sql += f"and cdr.account_id = {account_id}"
+            elif billing_id:
+                sql += f"and cdr.billing_id = {billing_id}"
+            if bnumber:
+                bnumber = mysms.clean_msisdn(bnumber)
+                sql += f"and cdr.bnumber = '{bnumber}'"
+        
+            sql += "order by dbtime desc limit 100;"""
     
-        if account_id:
-            sql += f"and cdr.account_id = {account_id}"
-        elif billing_id:
-            sql += f"and cdr.billing_id = {billing_id}"
-
-        if bnumber:
-            bnumber = mysms.clean_msisdn(bnumber)
-            sql += f"and cdr.bnumber = '{bnumber}'"
-    
-        sql += "order by dbtime desc limit 100;"""
+        else: # cpg_id is provided
+            sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,
+                        operators.name as operator,
+                        cdr.status,cdr.xms,cdr.udh,cdr.split,to_char(notif3_dbtime,'YYYY-MM-DD HH24:MI:SS') as notif_dbtime, sell, cost from cdr 
+                        join billing_account on cdr.billing_id=billing_account.id join account on cdr.account_id=account.id 
+                        join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where cdr.cpg_id = {cpg_id} """
 
     logger.info(sql)
     
@@ -1600,163 +1802,6 @@ async def sell_chart(
     
     return JSONResponse(status_code=200, content=resp_json)
 
-
-#@app.post("/iapi/internal/cpg_report") #optional arg: billing_id, account_id
-#async def campaign_report(
-#    args: models.TrafficReportRequest = Body(
-#        ...,
-#        examples = models.example_traffic_report_request,
-#    ),
-#):
-#    d_arg = args.dict()
-#    billing_id = d_arg.get("billing_id")
-#    account_id = d_arg.get("account_id")
-#    start_date = d_arg.get("start_date",None)
-#    end_date = d_arg.get("end_date",None)
-#    if not start_date or not end_date: #default return all campaign
-#
-#        sql = f"""select n.cpg_id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,b.company_name,a.name as account_name,p.name as product_name,cpg.xms,count(*) from cpg_blast_list n               join cpg on n.cpg_id=cpg.id join billing_account b on cpg.billing_id=b.id join account a on cpg.account_id=a.id join product p on cpg.product_id=p.id 
-#                where n.field_name='number' """
-#
-#    else:
-#
-#        sql = f"""select n.cpg_id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,b.company_name,a.name as account_name,p.name as product_name,cpg.xms,count(*) from cpg_blast_list 
-#        n join cpg on n.cpg_id=cpg.id join billing_account b on cpg.billing_id=b.id join account a on cpg.account_id=a.id join product p on cpg.product_id=p.id 
-#        where n.field_name='number' and cpg.creation_time between '{start_date}' and '{end_date}' """
-#
-#    if account_id:
-#        sql += f"and cpg.account_id = {account_id}"
-#    elif billing_id:
-#        sql += f"and cpg.billing_id = {billing_id}"
-#
-#    sql += "group by n.cpg_id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,b.company_name,account_name,product_name,cpg.xms;"
-#    logger.info(sql)
-#
-#    l_data = list()
-#    data = defaultdict(dict)
-#
-#    cur.execute(sql)
-#    rows = cur.fetchall()
-#    for row in rows:
-#        (cpg_id,cpg_name,status,creation_time,sending_time,tpoa,company_name,account_name,product_name,content,qty_bnumber) = row
-#        creation_time = creation_time.strftime("%Y-%m-%d, %H:%M:%S")
-#        try:
-#            sending_time = sending_time.strftime("%Y-%m-%d, %H:%M:%S")
-#        except:
-#            sending_time = ""
-#
-#        d = {
-#            "cpg_id": cpg_id,
-#            "cpg_name": cpg_name,
-#            "status": status,
-#            "creation_time": creation_time,
-#            "sending_time": sending_time,
-#            "tpoa": tpoa,
-#            "content": content,
-#            "company_name": company_name,
-#            "account_name": account_name,
-#            "product_name": product_name,
-#            "qty_bnumber": qty_bnumber,
-#        }
-#    
-#        l_data.append(d)
-#    
-#    if len(l_data) > 0:
-#        resp_json = {
-#            "errorcode" : 0,
-#            "status": "Success",
-#            "count": len(l_data),
-#            "results": l_data
-#        }
-#    else:
-#        resp_json = {
-#            "errorcode": 1,
-#            "status":"No Record found!"
-#        }
-#        return JSONResponse(status_code=404, content=resp_json)
-#    
-#    return JSONResponse(status_code=200, content=resp_json)
-
-@app.get("/iapi/internal/cpg_report") #return all campaign
-async def get_all_campaign_report():
-    result = func_get_campaign_report()
-    return result
-
-@app.get("/iapi/internal/cpg_report/{billing_id}") #return all campaign of this billing account
-async def get_campaign_report_by_billing_id(billing_id: int):
-    
-    result = func_get_campaign_report(billing_id)
-    return result
-
-def func_get_campaign_report(arg_billing_id=None):
-    sql = f"""select cpg.id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,cpg.xms,b.company_name,a.name as account_name,p.name as product_name from cpg join billing_account b on cpg.billing_id=b.id join account a on cpg.account_id=a.id join product p on cpg.product_id=p.id """
-    if arg_billing_id:
-        sql += f" where cpg.billing_id={arg_billing_id};"
-    logger.info(sql)
-
-    l_data = list()
-    data = defaultdict(dict)
-
-    cur.execute(sql)
-    rows = cur.fetchall()
-    for row in rows:
-        (cpg_id,cpg_name,cpg_status,creation_time,sending_time,tpoa,content,company_name,account_name,product_name) = row
-        creation_time = creation_time.strftime("%Y-%m-%d, %H:%M:%S")
-        try:
-            sending_time = sending_time.strftime("%Y-%m-%d, %H:%M:%S")
-        except:
-            sending_time = ""
-
-        d = {
-            "cpg_id": cpg_id,
-            "cpg_name": cpg_name,
-            "status": cpg_status,
-            "creation_time": creation_time,
-            "sending_time": sending_time,
-            "tpoa": tpoa,
-            "content": content,
-            "company_name": company_name,
-            "account_name": account_name,
-            "product_name": product_name
-        }
-
-        if cpg_status == "SENT": #check status, TBD: query from cdr_agg
-            sql = f"""select status,sum(split),sum(sell) from cdr where cpg_id={cpg_id} group by status;"""
-            cur.execute(sql)
-            total_qty,total_cost = 0,0
-            rows = cur.fetchall()
-            for row in rows:
-                (status,qty,cost) = row
-                if not status or status == '':
-                    status = 'Pending'
-
-                d[status] = qty
-                total_qty += qty
-                total_cost += cost
-
-            d["total_sent"] = total_qty
-            d["cost"] = f"{total_cost:,.2f}"
-    
-        l_data.append(d)
-    
-    if len(l_data) > 0:
-        resp_json = {
-            "errorcode" : 0,
-            "status": "Success",
-            "count": len(l_data),
-            "results": l_data
-        }
-    else:
-        resp_json = {
-            "errorcode": 1,
-            "status":"No Record found!"
-        }
-        return JSONResponse(status_code=404, content=resp_json)
-    
-    logger.info("### reply client:")
-    logger.info(json.dumps(resp_json, indent=4))
-    
-    return JSONResponse(status_code=200, content=resp_json)
 
 
 def get_country_name(cid):

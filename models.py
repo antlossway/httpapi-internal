@@ -14,13 +14,14 @@ class SMSResponse(BaseModel):
     messages: List[Msg]
 
 class InternalNewCampaign(BaseModel):
+    billing_id: int
+    account_id: int
     blast_list: List[str]
     cpg_name: str
     cpg_tpoa: str
     cpg_xms: str
-    billing_id: int
-    account_id: int
-    product_id: int
+    admin_webuser_id: int
+    cpg_schedule: Optional[str] # 2022-02-15, 15:47:00
 
 class InternalSMS_BillingAccount(BaseModel):
 #    billing_id: int
@@ -483,25 +484,27 @@ example_internal_cpg={
     "valid_list_with_bnumber_only": {
         "summary": "in most cases uploaded list only contain bnumber",
         "value": {
+            "billing_id":1,
+            "account_id":2,
             "blast_list": ["+6511223344","+6577889900"],
             "cpg_name": "promotion for black friday",
             "cpg_tpoa": "TopShop",
             "cpg_xms": "Enjoy 50% discount",
-            "billing_id":1,
-            "account_id":2,
-            "product_id":0
+            "admin_webuser_id":1,
+            "cpg_schedule": "2022-02-15 15:47:00"
         },
     },
     "valid_list_with_bnumber_and_variables": {
         "summary": "valid list with bnumber and variables",
         "value": {
+            "billing_id":1,
+            "account_id":2,
             "blast_list": ["name,number","Bob,+6511223344","Alice,+6577889900"],
             "cpg_name": "promotion for black friday",
             "cpg_tpoa": "TopShop",
             "cpg_xms": "%name%, don't miss the sale, check promotion code send to %number%",
-            "billing_id":1,
-            "account_id":2,
-            "product_id":0
+            "admin_webuser_id":1,
+            "cpg_schedule": "2022-02-15 15:47:00"
         },
     },
 }
@@ -532,6 +535,7 @@ class TransactionRequest(BaseModel):
     end_date: Optional[str]
     billing_id: Optional[int]
     account_id: Optional[int]
+    cpg_id: Optional[int]
     msgid: Optional[str]
     bnumber: Optional[str]
 
@@ -546,6 +550,11 @@ example_transaction_report_request = {
     "specify billing_id":{
         "value": {
             "billing_id": 1
+        },
+    },
+    "specify cpg_id":{
+        "value": {
+            "cpg_id": 1
         },
     },
     "specify msgid":{

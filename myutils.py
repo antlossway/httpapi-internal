@@ -130,8 +130,7 @@ def read_comma_sep_lines(l_line): #return -1 if format issue, return None if no 
 
         if not 'number' in headers or '' in headers:
             print("!!! no field name 'number' or includes field with empty value")
-            return -1 #format issue
-
+            return -1 # file content format issue
 
         for line in l_line[1:]: #start from 2nd line
             items = line.split(',')
