@@ -6,6 +6,7 @@
 from textwrap import indent
 from fastapi import FastAPI, Body, Response, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 import re
 import smsutil
@@ -50,6 +51,7 @@ app = FastAPI(
 
 )
 
+app.mount("/iapi/static", StaticFiles(directory="/var/www/html/cpg_blast_list"), name="static")
     
 def is_empty(field):
     if field == '' or field == None:
@@ -80,10 +82,19 @@ async def create_campaign(
 #    admin_webuser_id: Optional[int]
 #    cpg_schedule: Optional[str] # 2022-02-15, 15:47:00
 
+#API will generate below data
+#    count_valid_entry: int # exmple:2
+#    download_link : str #blast list download link, example /iapi/static/k5bsz677b1r83oixrq7v
+
+
     logger.info(f"{request.url.path}: from {request.client.host}")
     
     blast_list = arg_new_cpg.blast_list
-    l_data = read_comma_sep_lines(blast_list) #None for no valid number or file content format issue
+
+    # l_data: None => no valid number, -1 =>  file content format issue, csv_path point to file which can be downloaded from UI
+    (l_data, csv_path) = read_comma_sep_lines(blast_list) 
+    logger.info(f"csv_path returned from read_comma_sep_lines: {csv_path}")
+
     if not l_data: #None, means no valid bnumber
         resp_json = {
             "errorcode": 8,
@@ -117,9 +128,11 @@ async def create_campaign(
         tpoa = re.sub(r"'",r"''",tpoa)
         xms = re.sub(r"'",r"''",xms)
 
-        sql = f"""insert into cpg (name,tpoa,billing_id,account_id,admin_webuser_id,xms) values 
-                ('{cpg_name}','{tpoa}',{billing_id},{account_id},{admin_webuser_id},'{xms}') returning id;"""
+        csv_filename = os.path.basename(csv_path)
+        download_link = f"/iapi/static/{csv_filename}"
 
+        sql = f"""insert into cpg (name,tpoa,billing_id,account_id,admin_webuser_id,xms,count_valid_entry,download_link) values 
+                ('{cpg_name}','{tpoa}',{billing_id},{account_id},{admin_webuser_id},'{xms}',{len(l_data)},'{download_link}') returning id;"""
         logger.debug(sql)
         cur.execute(sql)
         try:
@@ -134,6 +147,7 @@ async def create_campaign(
  
             return JSONResponse(status_code=500, content=resp_json)
 
+        #### insert into cpg_blast_list
         for d in l_data:
             hash_value = d.get('hash',None)
             if hash_value:
@@ -149,13 +163,24 @@ async def create_campaign(
                            "errorcode": 11,
                            "errormsg": f"!!! insert into cpg_blast_list table error"
                         }
-                        sql = f"update cpg set status='ERROR' where id={cpg_id}"
-                        logger.debug(sql)
+
+                        #### delete record from cpg and cpg_blast_list, also clean up csv file
+                        sql = f"delete from cpg where id={cpg_id}"
                         cur.execute(sql)
+                        logger.debug(f"{sql}\n -- deleted {cur.rowcount}")
+
+                        sql = f"delete from cpg_blast_list where cpg_id={cpg_id}"
+                        cur.execute(sql)
+                        logger.debug(f"{sql}\n -- deleted {cur.rowcount}")
+
+                        os.unlink(csv_path)
+                        logger.debug(f"delete {csv_path}")
+
                         logger.info("### new cpg reply UI:")
                         logger.info(json.dumps(resp_json, indent=4))
  
                         return JSONResponse(status_code=500, content=resp_json)
+
         if cpg_schedule:
             try:
                 sql = f"update cpg set sending_time='{cpg_schedule}',status='TO_SEND' where id={cpg_id}"
@@ -166,9 +191,18 @@ async def create_campaign(
                    "errorcode": 12,
                    "errormsg": f"!!! update cpg sending_time error, check time format"
                 }
-                sql = f"update cpg set status='ERROR' where id={cpg_id}"
+
+                #### delete record from cpg and cpg_blast_list
+                sql = f"delete from cpg where id={cpg_id}"
                 cur.execute(sql)
-                logger.debug(sql)
+                logger.debug(f"{sql}\n -- deleted {cur.rowcount}")
+
+                sql = f"delete from cpg_blast_list where cpg_id={cpg_id}"
+                cur.execute(sql)
+                logger.debug(f"{sql}\n -- deleted {cur.rowcount}")
+
+                os.unlink(csv_path)
+                logger.debug(f"delete {csv_path}")
 
                 logger.info("### new cpg reply UI:")
                 logger.info(json.dumps(resp_json, indent=4))
@@ -180,10 +214,10 @@ async def create_campaign(
             'count_valid_entry': len(l_data)
         }
 
-    logger.info("### reply UI:")
-    logger.info(json.dumps(resp_json, indent=4))
+        logger.info("### reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
  
-    return JSONResponse(status_code=200, content=resp_json)
+        return JSONResponse(status_code=200, content=resp_json)
 
 @app.delete('/iapi/internal/cpg/{cpg_id}') # delete cpg
 async def delete_campaign(cpg_id: int):
@@ -201,7 +235,7 @@ async def delete_campaign(cpg_id: int):
         logger.info("### new cpg reply UI:")
         logger.info(json.dumps(resp_json, indent=4))
  
-        return JSONResponse(status_code=422, content=resp_json)
+        return JSONResponse(status_code=404, content=resp_json)
     
     if status in l_cannot_delete:
         resp_json = {
@@ -232,6 +266,129 @@ async def delete_campaign(cpg_id: int):
  
     return JSONResponse(status_code=200, content=resp_json)
 
+@app.post('/iapi/internal/cpg_blast_list') # update cpg_blast_list for an existing campaign, when the status is not [SENDING, SENT]
+async def update_cpg_blast_list(
+    arg_new_cpg: models.InternalUpdateCpgBlastList = Body(
+                     ...,
+                     examples=models.example_update_cpg_blast_list,
+    ),
+):
+
+#    cpg_id: int
+#    blast_list: List[str]
+#    admin_webuser_id: Optional[int]
+
+#API will update below data
+#    count_valid_entry: int # exmple:2
+#    download_link : str #blast list download link, example /iapi/static/k5bsz677b1r83oixrq7v
+    
+    cpg_id = arg_new_cpg.cpg_id
+    blast_list = arg_new_cpg.blast_list
+
+    ## can not update for status "SENDING" or "SENT"
+    l_cannot_update = ['SENDING','SENT']
+    cur.execute(f"select status from cpg where id={cpg_id}")
+    try:
+        status = cur.fetchone()[0]
+    except:
+        resp_json = {
+            "errorcode": 1,
+            "errormsg": f"No campaign found with id {cpg_id}"
+        }
+        logger.info("### update_cpg_blast_list reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
+ 
+        return JSONResponse(status_code=404, content=resp_json)
+    
+    if status in l_cannot_update:
+        resp_json = {
+            "errorcode": 1,
+            "errormsg": f"can not update campaign when status in {l_cannot_update}"
+        }
+        logger.info("### update_cpg_blast_list reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
+ 
+        return JSONResponse(status_code=422, content=resp_json)
+ 
+    # l_data: None => no valid number, -1 =>  file content format issue, csv_path point to file which can be downloaded from UI
+    (l_data, csv_path) = read_comma_sep_lines(blast_list) 
+    logger.info(f"csv_path returned from read_comma_sep_lines: {csv_path}")
+
+    if not l_data: #None, means no valid bnumber
+        resp_json = {
+            "errorcode": 8,
+            "errormsg": f"No valid B-number found"
+        }
+        logger.info("### update_cpg_blast_list reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
+ 
+        return JSONResponse(status_code=422, content=resp_json)
+        #raise HTTPException(status_code=422, detail=f"no valid MSISDN")
+    elif l_data == -1:
+        resp_json = {
+            "errorcode": 9,
+            "errormsg": f"wrong format of blast list content"
+        }
+        logger.info("### update_cpg_blast_list reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
+ 
+        return JSONResponse(status_code=422, content=resp_json)
+        #raise HTTPException(status_code=422, detail=f"issue with the format of blast list content")
+    else:
+        admin_webuser_id = arg_new_cpg.admin_webuser_id
+
+        csv_filename = os.path.basename(csv_path)
+        download_link = f"/iapi/static/{csv_filename}"
+
+        #### delete old cpg_blast_list
+        sql = f"delete from cpg_blast_list where cpg_id={cpg_id}"
+        cur.execute(sql)
+        logger.debug(f"{sql}\n -- deleted {cur.rowcount}")
+
+        #### insert into cpg_blast_list
+        for d in l_data:
+            hash_value = d.get('hash',None)
+            if hash_value:
+                del d['hash'] #delete 'hash' from the dict
+                for k,v in d.items():
+                    sql = f"""insert into cpg_blast_list (cpg_id,field_name,value,hash) values ({cpg_id}, '{k}','{v}','{hash_value}');"""
+                    logger.debug(sql)
+                    try:
+                        cur.execute(sql)
+                    except Exception as err:
+                        logger.debug(f"!!! insertion error {err}")
+                        resp_json = {
+                           "errorcode": 11,
+                           "errormsg": f"!!! insert into cpg_blast_list table error"
+                        }
+
+                        #### update cpg with status='ERROR'
+                        sql = f"update cpg set status='ERROR',count_valid_entry={len(l_data)},download_link='{download_link}' where id={cpg_id};"
+                        cur.execute(sql)
+                        logger.debug(f"{sql}\n -- updated {cur.rowcount}")
+
+                        logger.info("### cpg_blast_list reply UI:")
+                        logger.info(json.dumps(resp_json, indent=4))
+
+                        return JSONResponse(status_code=500, content=resp_json)
+
+        sql = f"""update cpg set count_valid_entry={len(l_data)}, download_link='{download_link}' where id={cpg_id}"""
+        logger.debug(sql)
+        cur.execute(sql)
+        logger.debug(f"-- updated {cur.rowcount}")
+        
+        resp_json = {
+            'cpg_id': cpg_id,
+            'count_valid_entry': len(l_data),
+            'download_link': download_link
+        }
+
+        logger.info("### reply UI:")
+        logger.info(json.dumps(resp_json, indent=4))
+ 
+        return JSONResponse(status_code=200, content=resp_json)
+
+
 @app.get("/iapi/internal/cpg_report") #return all campaign
 async def get_all_campaign_report():
     result = func_get_campaign_report()
@@ -245,7 +402,8 @@ async def get_campaign_report_by_billing_id(billing_id: int):
 
 def func_get_campaign_report(arg_billing_id=None):
     sql = f"""select cpg.id,cpg.name,cpg.status,cpg.creation_time,cpg.sending_time,cpg.tpoa,cpg.xms,b.company_name,a.name as account_name,p.name as product_name, 
-            webuser.username as admin_webuser_name from cpg join billing_account b on cpg.billing_id=b.id join account a on cpg.account_id=a.id join product p on a.product_id=p.id 
+            webuser.username as admin_webuser_name, cpg.count_valid_entry,cpg.download_link from cpg 
+            join billing_account b on cpg.billing_id=b.id join account a on cpg.account_id=a.id join product p on a.product_id=p.id 
             join webuser on cpg.admin_webuser_id=webuser.id """
             
     if arg_billing_id:
@@ -258,7 +416,7 @@ def func_get_campaign_report(arg_billing_id=None):
     cur.execute(sql)
     rows = cur.fetchall()
     for row in rows:
-        (cpg_id,cpg_name,cpg_status,creation_time,sending_time,tpoa,content,company_name,account_name,product_name,admin_webuser_name) = row
+        (cpg_id,cpg_name,cpg_status,creation_time,sending_time,tpoa,content,company_name,account_name,product_name,admin_webuser_name,count_valid_entry,download_link) = row
         creation_time = creation_time.strftime("%Y-%m-%d, %H:%M:%S")
         try:
             sending_time = sending_time.strftime("%Y-%m-%d, %H:%M:%S")
@@ -276,7 +434,9 @@ def func_get_campaign_report(arg_billing_id=None):
             "company_name": company_name,
             "account_name": account_name,
             "product_name": product_name,
-            "admin_webuser_name":admin_webuser_name
+            "admin_webuser_name":admin_webuser_name,
+            "count_valid_entry": count_valid_entry,
+            "download_link": download_link
         }
 
         if cpg_status == "SENT": #check status, TBD: query from cdr_agg
@@ -1109,7 +1269,6 @@ async def insert_record(
     return JSONResponse(status_code=200,content=resp_json)
 
 @app.post("/iapi/internal/update", 
-#response_model=models.InsertResponse, 
             responses={404: {"errorcode": 1, "status": "some error msg"} }
 )
 async def update_record(
@@ -1209,7 +1368,6 @@ async def update_record(
                 "status": f"missing compulsory field"
             }
             return JSONResponse(status_code=500,content=resp_json)
-
         ## debug
         #d_data = data_obj.dict()
         #print(json.dumps(d_data, indent=4))
@@ -1234,6 +1392,40 @@ async def update_record(
                     return JSONResponse(status_code=403,content=resp_json)
             except:
                 pass
+    elif table == 'cpg':
+        try:
+            data_obj = models.UpdateCPG(**args.dict()) #convert into defined model, removing useless field
+        except:
+            resp_json = {
+                "errorcode":2,
+                "status": f"missing compulsory field"
+            }
+            return JSONResponse(status_code=500,content=resp_json)
+        ## don't allow update for CPG status in [SENDING, SENT]
+        l_cannot_update = ['SENDING','SENT']
+        cur.execute(f"select status from cpg where id={id}")
+        try:
+            status = cur.fetchone()[0]
+        except:
+            resp_json = {
+                "errorcode": 1,
+                "errormsg": f"No campaign found with id {id}"
+            }
+            logger.info("### internal/update cpg reply UI:")
+            logger.info(json.dumps(resp_json, indent=4))
+     
+            return JSONResponse(status_code=404, content=resp_json)
+        
+        if status in l_cannot_update:
+            resp_json = {
+                "errorcode": 1,
+                "errormsg": f"can not update campaign when status in {l_cannot_update}"
+            }
+            logger.info("### internal/update cpg reply UI:")
+            logger.info(json.dumps(resp_json, indent=4))
+     
+            return JSONResponse(status_code=422, content=resp_json)
+
 
     #### general processing for any table
     d_data = data_obj.dict()

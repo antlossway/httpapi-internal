@@ -105,7 +105,11 @@ def clean_msisdn(msisdn):
 
     return number
 
-def read_comma_sep_lines(l_line): #return -1 if format issue, return None if no valid bnumber
+### will create .csv file to show in UI for client to download the clean-up blast list
+def read_comma_sep_lines(l_line): #return -1 if content format issue, return None if no valid bnumber
+    csv_dir = f"/var/www/html/cpg_blast_list"
+    filename = generate_otp('lower',20)
+    csv_path = os.path.join(csv_dir, filename)
 
     ### if first line has comma, means it's headers, in this case, there must be a field named 'number', and no empty field
     headers = l_line[0].strip().split(',')
@@ -130,43 +134,60 @@ def read_comma_sep_lines(l_line): #return -1 if format issue, return None if no 
 
         if not 'number' in headers or '' in headers:
             print("!!! no field name 'number' or includes field with empty value")
-            return -1 # file content format issue
+            return (-1, None) # file content format issue
 
-        for line in l_line[1:]: #start from 2nd line
-            items = line.split(',')
-            items = [i.strip() for i in items]
-            #print(f"clean up line: {items}")
+        with open(csv_path, 'w', encoding='utf-8') as w:
+            w.write(','.join(headers) + "\n")
 
-            try:
-                bnumber = clean_msisdn(items[index_msisdn])
-                if bnumber: #bnumber valid
-                    items[index_msisdn] = bnumber
-                    d = dict()
-                    for i, v in enumerate(items):
-                        header = d_header[i] #get the field name
-                        if v: #value not empty
-                            d[header] = v
-                    ## add a hash value to correlate all information for the same SMS, number,variables
-                    md5 = hashlib.md5(f"{bnumber}{str(random.randint(0,10000000))}".encode()).hexdigest()
-                    d['hash'] = md5
-                    l_result.append(d)
-            except: #no bnumber in this line
-                pass
+            for line in l_line[1:]: #start from 2nd line
+                items = line.split(',')
+                items = [i.strip() for i in items]
+                #print(f"clean up line: {items}")
+    
+                try:
+                    bnumber = clean_msisdn(items[index_msisdn])
+                    if bnumber: #bnumber valid
+
+                        items[index_msisdn] = bnumber
+                        w.write(','.join(items) + "\n") # write output csv
+
+                        ##### prepare data to be inserted into cpg_blast_list
+                        d = dict()
+                        for i, v in enumerate(items):
+                            header = d_header[i] #get the field name
+                            if v: #value not empty
+                                d[header] = v
+                        ## add a hash value to correlate all information for the same SMS, number,variables
+                        md5 = hashlib.md5(f"{bnumber}{str(random.randint(0,10000000))}".encode()).hexdigest()
+                        d['hash'] = md5
+                        l_result.append(d)
+                except: #no bnumber in this line
+                    pass
+        if not l_result:
+            os.unlink(csv_path)
+            logger.info(f"no valid entry, delete {csv_path}")
 
     ## first line has no comma, so this file only contains bnumber, does not care there is field definition or not
     else:
-        for line in l_line:
-            line = line.strip() #remove trailing space
-            bnumber = clean_msisdn(line)
-            if bnumber:
-                md5 = hashlib.md5(f"{bnumber}{str(random.randint(0,10000000))}".encode()).hexdigest()
-                l_result.append({'number':line, 'hash':md5})
+        with open(csv_path, 'w', encoding='utf-8') as w:
+            for line in l_line:
+                line = line.strip() #remove trailing space
+                bnumber = clean_msisdn(line)
+
+                if bnumber:
+                    w.write(f"{bnumber}\n") # write output csv
+
+                    ##### prepare data to be inserted into cpg_blast_list
+                    md5 = hashlib.md5(f"{bnumber}{str(random.randint(0,10000000))}".encode()).hexdigest()
+                    l_result.append({'number':line, 'hash':md5})
+        if not l_result:
+            os.unlink(csv_path)
+            logger.info(f"no valid entry, delete {csv_path}")
 
     if len(l_result) == 0:
-        return None
+        return (None, None)
     else:
-        return l_result
-
+        return (l_result, csv_path) 
 
 if __name__ == '__main__':
     udh_base = gen_udh_base()

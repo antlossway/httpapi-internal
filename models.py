@@ -330,6 +330,13 @@ class InternalUpdate(BaseModel): #add all possible field here, depends on differ
     #selling_price
     price: Optional[float]
     validity_date: Optional[str]
+
+    # cpg campaign
+    name: Optional[str]
+    tpoa: Optional[str]
+    xms: Optional[str]
+    sending_time: Optional[str]
+
     
 example_internal_update={
     "billing_account": {
@@ -412,7 +419,17 @@ example_internal_update={
             "admin_webuser_id": 1
         },
     },
-
+    "cpg": {
+        "summary": "update name/tpoa/sending_time for campaign",
+        "value": {
+            "table": "cpg",
+            "id": 1,
+            "name": "some other name",
+            "tpoa": "newsender",
+            "sending_time": "2022-03-01 10:00",
+            "admin_webuser_id": 1
+        },
+    }
 }
 
 class UpdateBillingAccount(BaseModel):
@@ -475,6 +492,37 @@ class UpdateSellingPrice(BaseModel):
     price: Optional[float]
     validity_date: Optional[str]
 
+class UpdateCPG(BaseModel):
+    # cpg campaign
+    name: Optional[str]
+    tpoa: Optional[str]
+    xms: Optional[str]
+    sending_time: Optional[str]
+    admin_webuser_id: Optional[int] #CMI admin webuser, to know which admin update the account
+
+class InternalUpdateCpgBlastList(BaseModel):
+    cpg_id: int
+    blast_list: List[str]
+    admin_webuser_id: Optional[int]
+
+example_update_cpg_blast_list={
+    "valid_list_with_bnumber_only": {
+        "summary": "in most cases uploaded list only contain bnumber",
+        "value": {
+            "cpg_id":1,
+            "blast_list": ["+6511223344","+6577889900"],
+            "admin_webuser_id":1
+        },
+    },
+    "valid_list_with_bnumber_and_variables": {
+        "summary": "valid list with bnumber and variables",
+        "value": {
+            "cpg_id":1,
+            "blast_list": ["name,number","Bob,+6511223344","Alice,+6577889900"],
+            "admin_webuser_id":1
+        },
+    },
+}
 
 class PasswordHashRequest(BaseModel):
     password: str = Field(example="combination of letter,number and special characters")
