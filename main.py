@@ -1615,6 +1615,15 @@ async def get_auditlog_by_billing_id(billing_id:int):
     
     return JSONResponse(status_code=200, content=resp_json)
 
+def get_billing_ac_currency():
+    d = dict()
+    sql = f"select id,currency from billing_account;"
+    cur.execute(sql)
+    rows = cur.fetchall()
+    for row in rows:
+        (idx,currency) = row
+        d[idx] = currency
+    return d
 
 @app.post("/iapi/internal/traffic_report") #optional arg: billing_id, account_id
 async def traffic_report(
@@ -1624,25 +1633,27 @@ async def traffic_report(
     ),
 ):
     d_arg = args.dict()
-    billing_id = d_arg.get("billing_id")
-    account_id = d_arg.get("account_id")
+    arg_billing_id = d_arg.get("billing_id")
+    arg_account_id = d_arg.get("account_id")
     start_date = d_arg.get("start_date",None)
     end_date = d_arg.get("end_date",None)
     if not start_date or not end_date: #default return past 7 days traffic
         sql = f"""select date, b.company_name,a.name as account_name,p.name as product_name,countries.name as country,
-        status,sum(sum_split),sum(sum_sell),sum(sum_cost) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
+        status,sum(sum_split),sum(sum_sell),sum(sum_cost),cdr_agg.billing_id from cdr_agg join billing_account b on cdr_agg.billing_id=b.id 
+        join account a on cdr_agg.account_id=a.id 
         join product p on cdr_agg.product_id=p.id join countries on cdr_agg.country_id=countries.id where date >= current_date - interval '7 days' """
 
     else:
         sql = f"""select date, b.company_name,a.name as account_name,p.name as product_name,countries.name as country,
-        status,sum(sum_split),sum(sum_sell),sum(sum_cost) from cdr_agg join billing_account b on cdr_agg.billing_id=b.id join account a on cdr_agg.account_id=a.id 
+        status,sum(sum_split),sum(sum_sell),sum(sum_cost),cdr_agg.billing_id from cdr_agg join billing_account b on cdr_agg.billing_id=b.id 
+        join account a on cdr_agg.account_id=a.id 
         join product p on cdr_agg.product_id=p.id join countries on cdr_agg.country_id=countries.id where date between '{start_date}' and '{end_date}' """
 
-    if account_id:
-        sql += f"and cdr_agg.account_id = {account_id}"
-    elif billing_id:
-        sql += f"and cdr_agg.billing_id = {billing_id}"
-    sql += "group by date,company_name,account_name,product_name,countries.name,status order by date"
+    if arg_account_id:
+        sql += f"and cdr_agg.account_id = {arg_account_id}"
+    elif arg_billing_id:
+        sql += f"and cdr_agg.billing_id = {arg_billing_id}"
+    sql += "group by date,company_name,account_name,product_name,countries.name,status,cdr_agg.billing_id order by date"
     logger.info(sql)
 
     l_data = list()
@@ -1654,7 +1665,7 @@ async def traffic_report(
     cur.execute(sql)
     rows = cur.fetchall()
     for row in rows:
-        (day,company_name,account_name,product_name,country,status,qty,sell,cost) = row
+        (day,company_name,account_name,product_name,country,status,qty,sell,cost,billing_id) = row
         if not cost:
             cost = 0
         if not sell:
@@ -1663,19 +1674,21 @@ async def traffic_report(
         if not status or status == '':
             status = 'Pending'
         try:
-            data_qty[f"{day}---{company_name}---{account_name}---{product_name}---{country}"][status] += qty
+            data_qty[f"{day}---{company_name}---{account_name}---{product_name}---{country}---{billing_id}"][status] += qty
         except:
-            data_qty[f"{day}---{company_name}---{account_name}---{product_name}---{country}"][status] = qty
+            data_qty[f"{day}---{company_name}---{account_name}---{product_name}---{country}---{billing_id}"][status] = qty
 
-        data_sell[f"{day}---{company_name}---{account_name}---{product_name}---{country}"] += sell
-        data_cost[f"{day}---{company_name}---{account_name}---{product_name}---{country}"] += cost
+        data_sell[f"{day}---{company_name}---{account_name}---{product_name}---{country}---{billing_id}"] += sell
+        data_cost[f"{day}---{company_name}---{account_name}---{product_name}---{country}---{billing_id}"] += cost
 
         final_total_qty += qty
         final_total_sell += sell
         final_total_cost += cost
 
+    billing_ac_currency = get_billing_ac_currency()
+
     for key,d_status_qty in sorted(data_qty.items()):
-        day,company_name,account_name,product_name,country = key.split('---')
+        day,company_name,account_name,product_name,country,billing_id = key.split('---')
         d = dict()
         total_qty_per_country = 0
 
@@ -1690,6 +1703,7 @@ async def traffic_report(
         d['total_sent'] = total_qty_per_country
         d['sell'] = f"{data_sell.get(key,0):,.3f}"
         d['cost'] = f"{data_cost.get(key,0):,.3f}"
+        d['sell_currency'] = billing_ac_currency.get(int(billing_id))
         l_data.append(d)
     
     if len(l_data) > 0:
@@ -2121,7 +2135,7 @@ def func_get_selling_price(arg_billing_id=None):
     today = datetime.date.today().strftime("%Y-%m-%d")
     #### get today's selling price
     sql = """select s.id,b.id as billing_id,s.account_id, b.company_name ,a.name as account_name,p.id as product_id, p.name as product_name,s.country_id,s.operator_id,
-            s.price,a.currency,s.validity_date
+            s.price,b.currency,s.validity_date
             from selling_price s left join account a on s.account_id=a.id left join billing_account b on a.billing_id=b.id left join product p on a.product_id=p.id 
             where date(validity_date) <= current_date and s.account_id != 4 and a.deleted=0 """
     if arg_billing_id:
@@ -2146,7 +2160,7 @@ def func_get_selling_price(arg_billing_id=None):
     
     #### get future selling price if there is any
     sql = """select s.id,b.id as billing_id,s.account_id, b.company_name ,a.name as account_name,p.id as product_id,p.name as product_name,s.country_id,s.operator_id,
-            s.price,a.currency,s.validity_date
+            s.price,b.currency,s.validity_date
             from selling_price s left join account a on s.account_id=a.id left join billing_account b on a.billing_id=b.id left join product p on a.product_id=p.id 
             where date(validity_date) > current_date and s.account_id != 4 and a.deleted=0 """
     if arg_billing_id:
