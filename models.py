@@ -96,6 +96,15 @@ class InternalInsert(BaseModel): #add all possible field here, depends on differ
     email: Optional[str]
     role_id: Optional[int]
     bnumber: Optional[str]
+    dashboard: Optional[int]
+    cpg: Optional[int]
+    pricing: Optional[int]
+    sdr: Optional[int]
+    ser: Optional[int]
+    sdl: Optional[int]
+    usermgmt: Optional[int]
+    audit: Optional[int]
+
     ### for audit
     auditlog: Optional[str]
 
@@ -149,6 +158,14 @@ class InsertWebUser(BaseModel):
     email: Optional[str]
     bnumber: Optional[str]
     admin_webuser_id: Optional[int] #CMI admin webuser, to know which admin add the account
+    dashboard: Optional[int]
+    cpg: Optional[int]
+    pricing: Optional[int]
+    sdr: Optional[int]
+    ser: Optional[int]
+    sdl: Optional[int]
+    usermgmt: Optional[int]
+    audit: Optional[int]
 
 class InsertAudit(BaseModel):
     ### for audit
@@ -223,7 +240,15 @@ example_internal_insert={
             "password_hash": "somegibberishtext",
             "email": "bob@example.com",
             "bnumber": "+6511223344",
-            "admin_webuser_id": 1
+            "admin_webuser_id": 1,
+            "dashboard": 1,
+            "cpg": 1,
+            "pricing": 1,
+            "sdr": 1,
+            "ser": 1,
+            "sdl": 1,
+            "usermgmt": 1,
+            "audit": 1
         },
     },
     "audit": {
@@ -311,6 +336,14 @@ class InternalUpdate(BaseModel): #add all possible field here, depends on differ
     email: Optional[str]
     role_id: Optional[int]
     bnumber: Optional[str]
+    dashboard: Optional[int]
+    cpg: Optional[int]
+    pricing: Optional[int]
+    sdr: Optional[int]
+    ser: Optional[int]
+    sdl: Optional[int]
+    usermgmt: Optional[int]
+    audit: Optional[int]
 
     ### for whitelist_ip and smpp_account
     #ipaddress: Optional[str]
@@ -373,6 +406,14 @@ example_internal_update={
             "deleted": 0,
             "live": 0,
             "admin_webuser_id": 1,
+            "dashboard": 1,
+            "cpg": 1,
+            "pricing": 1,
+            "sdr": 1,
+            "ser": 1,
+            "sdl": 1,
+            "usermgmt": 1,
+            "audit": 1
         },
     },
 #    "whitelist_ip": {
@@ -470,6 +511,14 @@ class UpdateWebUser(BaseModel):
     deleted: Optional[int]
     live: Optional[int]
     admin_webuser_id: Optional[int] #CMI admin webuser, to know which admin add the account
+    dashboard: Optional[int]
+    cpg: Optional[int]
+    pricing: Optional[int]
+    sdr: Optional[int]
+    ser: Optional[int]
+    sdl: Optional[int]
+    usermgmt: Optional[int]
+    audit: Optional[int]
 
 #class UpdateWhitelistIP(BaseModel):
 #    ipaddress: Optional[str]

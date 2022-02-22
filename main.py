@@ -659,14 +659,16 @@ from werkzeug.security import generate_password_hash,check_password_hash
 async def verify_login(arg_login: models.InternalLogin, request:Request, response:Response):
 #async def verify_login(arg_login: models.InternalLogin, request:Request, response:Response, auth_result=Depends(myauth.allowinternal)):
     # check if username exists
-    cur.execute("""select u.id as webuser_id,username,password_hash,email,bnumber,role_id,webrole.name as role_name,
-    billing_id,b.billing_type,b.company_name,b.company_address,b.country,b.city,b.postal_code,b.currency from webuser u
+    cur.execute("""select u.id as webuser_id,u.username,u.password_hash,u.email,u.bnumber,u.role_id,webrole.name as role_name,
+    u.billing_id,b.billing_type,b.company_name,b.company_address,b.country,b.city,b.postal_code,b.currency, 
+    u.dashboard,u.cpg,u.pricing,u.sdr,u.ser,u.sdl,u.usermgmt,u.audit from webuser u
         left join billing_account b on u.billing_id=b.id left join webrole on u.role_id=webrole.id where username=%s and u.deleted=0 and u.live=1;
         """, (arg_login.username,))
     row = cur.fetchone()
     if row:
         (webuser_id,username,password_hash,email,bnumber,role_id,role_name,billing_id,billing_type,company_name,company_address,
-        country,city,postal_code,currency) = row
+        country,city,postal_code,currency,
+        dashboard,cpg,pricing,sdr,ser,sdl,usermgmt,audit) = row
         ##verify password
         #if arg_login.password_hash == password_hash:
         if check_password_hash(password_hash,arg_login.password):
@@ -686,7 +688,15 @@ async def verify_login(arg_login: models.InternalLogin, request:Request, respons
                 "country":country,
                 "city":city,
                 "postal_code":postal_code,
-                "currency":currency
+                "currency":currency,
+                "dashboard": dashboard,
+                "cpg": cpg,
+                "pricing": pricing,
+                "sdr": sdr,
+                "ser": ser,
+                "sdl": sdl,
+                "usermgmt": usermgmt,
+                "audit": audit,
             }
         else:
             resp_json = {
@@ -873,8 +883,8 @@ def get_webusers_by_billing_id(billing_id:int):
     return result
 
 def func_get_webusers(arg_billing_id=None):
-    sql = f"""select u.billing_id,u.id as webuser_id,u.username,u.email,u.bnumber,b.company_name,u.role_id,r.name as role_name,
-    u.live from webuser u join billing_account b on u.billing_id=b.id join webrole r on r.id=u.role_id 
+    sql = f"""select u.billing_id,u.id as webuser_id,u.username,u.email,u.bnumber,b.company_name,u.role_id,r.name as role_name, u.live, 
+    u.dashboard,u.cpg,u.pricing,u.sdr,u.ser,u.sdl,u.usermgmt,u.audit from webuser u join billing_account b on u.billing_id=b.id join webrole r on r.id=u.role_id 
     where u.deleted=0"""
     
     if arg_billing_id:
@@ -885,7 +895,8 @@ def func_get_webusers(arg_billing_id=None):
     l_data = list() #list of dict
     rows = cur.fetchall()
     for row in rows:
-        (billing_id,webuser_id,username,email,bnumber,company_name,role_id,role_name,live) = row
+        (billing_id,webuser_id,username,email,bnumber,company_name,role_id,role_name,live,
+         dashboard,cpg,pricing,sdr,ser,sdl,usermgmt,audit) = row
         d = {
             "billing_id": billing_id,
             "webuser_id": webuser_id,
@@ -895,7 +906,15 @@ def func_get_webusers(arg_billing_id=None):
             "company_name": company_name,
             "role_id": role_id,
             "role_name": role_name,
-            "live": live
+            "live": live,
+            "dashboard": dashboard,
+            "cpg": cpg,
+            "pricing": pricing,
+            "sdr": sdr,
+            "ser": ser,
+            "sdl": sdl,
+            "usermgmt": usermgmt,
+            "audit": audit,
         }
         l_data.append(d)
     
