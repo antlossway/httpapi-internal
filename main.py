@@ -822,7 +822,7 @@ def get_all_accounts():
 def func_get_all_accounts(arg_billing_id=None):
     sql = """select a.billing_id,b.company_name,a.id as account_id,a.name as account_name,a.product_id,p.name as product_name,a.live,
     a.connection_type, a.systemid,a.password,a.api_key,a.api_secret,a.callback_url,a.comment from account a join billing_account b on b.id=a.billing_id 
-    join product p on a.product_id = p.id where a.deleted=0"""
+    join product p on a.product_id = p.id where a.deleted=0 and b.deleted=0 """
 
     if arg_billing_id:
         sql += f"and a.billing_id={arg_billing_id};"
@@ -885,7 +885,7 @@ def get_webusers_by_billing_id(billing_id:int):
 def func_get_webusers(arg_billing_id=None):
     sql = f"""select u.billing_id,u.id as webuser_id,u.username,u.email,u.bnumber,b.company_name,u.role_id,r.name as role_name, u.live, 
     u.dashboard,u.cpg,u.pricing,u.sdr,u.ser,u.sdl,u.usermgmt,u.audit from webuser u join billing_account b on u.billing_id=b.id join webrole r on r.id=u.role_id 
-    where u.deleted=0"""
+    where u.deleted=0 and b.deleted=0 """
     
     if arg_billing_id:
         sql += f" and u.billing_id={arg_billing_id};"
