@@ -169,6 +169,8 @@ def internal_create_sms_smpp(outdir,data):
 #               }
 
         #check if account is SMPP or HTTP
+    logger.info(json.dumps(data, indent=4))
+
     msgid = data.get("msgid")
     bnumber = data.get("to")
     error = 0
@@ -207,6 +209,7 @@ def internal_create_sms_smpp(outdir,data):
             w.write(f"LocalId={msgid}\n")
             w.write(f"MsgId={msgid}\n")
             w.write(f"XMS={data.get('content')}\n")
+            w.write(f"UDH={data.get('udh')}\n")
             w.write(f"StatusReportRequest=True\n") #always require DLR from our supplier
 
         os.rename(tmpoutput,output)
