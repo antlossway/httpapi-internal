@@ -611,6 +611,7 @@ class TrafficReportRequest(BaseModel):
     end_date: Optional[str]
     billing_id: Optional[int]
     account_id: Optional[int]
+    webuser_id: Optional[int]
 
 example_traffic_report_request = {
     "specify date range":{
@@ -635,6 +636,7 @@ class TransactionRequest(BaseModel):
     cpg_id: Optional[int]
     msgid: Optional[str]
     bnumber: Optional[str]
+    webuser_id: Optional[int]
 
 example_transaction_report_request = {
     "specify account_id":{

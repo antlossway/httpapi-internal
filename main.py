@@ -1644,6 +1644,17 @@ def get_billing_ac_currency():
         d[idx] = currency
     return d
 
+def get_role_id(webuser_id):
+    if webuser_id == -1 or webuser_id == None:
+        return -1
+
+    cur.execute(f"select role_id from webuser where id={webuser_id}")
+    try:
+        role_id = cur.fetchone()[0]
+        return role_id
+    except:
+        return -1
+
 @app.post("/iapi/internal/traffic_report") #optional arg: billing_id, account_id
 async def traffic_report(
     args: models.TrafficReportRequest = Body(
@@ -1656,6 +1667,8 @@ async def traffic_report(
     arg_account_id = d_arg.get("account_id")
     start_date = d_arg.get("start_date",None)
     end_date = d_arg.get("end_date",None)
+    webuser_id = d_arg.get("webuser_id",-1)
+
     if not start_date or not end_date: #default return past 7 days traffic
         sql = f"""select date, b.company_name,a.name as account_name,p.name as product_name,countries.name as country,
         status,sum(sum_split),sum(sum_sell),sum(sum_cost),cdr_agg.billing_id from cdr_agg join billing_account b on cdr_agg.billing_id=b.id 
@@ -1672,6 +1685,10 @@ async def traffic_report(
         sql += f"and cdr_agg.account_id = {arg_account_id}"
     elif arg_billing_id:
         sql += f"and cdr_agg.billing_id = {arg_billing_id}"
+
+    if get_role_id(webuser_id) != 0: #only superadmin can see our test traffic
+        sql += f" and cdr_agg.billing_id != 1 "
+
     sql += "group by date,company_name,account_name,product_name,countries.name,status,cdr_agg.billing_id order by date"
     logger.info(sql)
 
@@ -1759,6 +1776,7 @@ async def transaction_report(
     start_date = d_arg.get("start_date",None)
     end_date = d_arg.get("end_date",None)
     cpg_id = d_arg.get("cpg_id")
+    webuser_id = d_arg.get("webuser_id", -1)
 
     if msgid:
         sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,operators.name as operator,
@@ -1781,14 +1799,18 @@ async def transaction_report(
                         join countries on cdr.country_id=countries.id join operators on cdr.operator_id=operators.id where date(cdr.dbtime) between '{start_date}' and '{end_date}' """
         
             if account_id:
-                sql += f"and cdr.account_id = {account_id}"
+                sql += f" and cdr.account_id = {account_id}"
             elif billing_id:
-                sql += f"and cdr.billing_id = {billing_id}"
+                sql += f" and cdr.billing_id = {billing_id}"
+
+            if get_role_id(webuser_id) != 0: #only superadmin can see our test traffic
+                sql += f" and cdr.billing_id != 1 "
+
             if bnumber:
                 bnumber = mysms.clean_msisdn(bnumber)
-                sql += f"and cdr.bnumber = '{bnumber}'"
+                sql += f" and cdr.bnumber = '{bnumber}'"
         
-            sql += "order by dbtime desc limit 100;"""
+            sql += " order by dbtime desc limit 100;"""
     
         else: # cpg_id is provided
             sql = f"""select cdr.dbtime,billing_account.company_name,account.name as account_name,cdr.msgid,cdr.tpoa,cdr.bnumber,countries.name as country,
@@ -1862,6 +1884,8 @@ async def volume_chart(
     account_id = d_arg.get("account_id")
     start_date = d_arg.get("start_date",None)
     end_date = d_arg.get("end_date",None)
+    webuser_id = d_arg.get("webuser_id",-1)
+
     if not start_date or not end_date: #default return past 7 days traffic
         start_date = datetime.date.today() - datetime.timedelta(7)
         end_date = datetime.date.today()
@@ -1879,9 +1903,13 @@ async def volume_chart(
         l_dates.append(dt_str)
 
     if account_id:
-        sql += f"and account_id = {account_id}"
+        sql += f"and cdr_agg.account_id = {account_id}"
     elif billing_id:
-        sql += f"and billing_id = {billing_id}"
+        sql += f"and cdr_agg.billing_id = {billing_id}"
+
+    if get_role_id(webuser_id) != 0: #only superadmin can see our test traffic
+        sql += f" and cdr_agg.billing_id != 1 "
+
     sql += "group by date,b.company_name order by date"
     logger.info(sql)
 
@@ -1957,6 +1985,8 @@ async def sell_chart(
     account_id = d_arg.get("account_id")
     start_date = d_arg.get("start_date",None)
     end_date = d_arg.get("end_date",None)
+    webuser_id = d_arg.get("webuser_id",-1)
+
     if not start_date or not end_date: #default return past 7 days traffic
         start_date = datetime.date.today() - datetime.timedelta(7)
         end_date = datetime.date.today()
@@ -1974,9 +2004,13 @@ async def sell_chart(
         l_dates.append(dt_str)
 
     if account_id:
-        sql += f"and account_id = {account_id}"
+        sql += f"and cdr_agg.account_id = {account_id}"
     elif billing_id:
-        sql += f"and billing_id = {billing_id}"
+        sql += f"and cdr_agg.billing_id = {billing_id}"
+
+    if get_role_id(webuser_id) != 0: #only superadmin can see our test traffic
+        sql += f" and cdr_agg.billing_id != 1 "
+
     sql += "group by date,b.company_name order by date"
     logger.info(sql)
 
