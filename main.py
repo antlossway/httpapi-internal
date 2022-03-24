@@ -221,7 +221,9 @@ async def create_campaign(
         return JSONResponse(status_code=200, content=resp_json)
 
 @app.delete('/iapi/internal/cpg/{cpg_id}') # delete cpg
-async def delete_campaign(cpg_id: int):
+async def delete_campaign(cpg_id: int,
+    auth_result=Depends(myauth.allowinternal)
+                          ):
 
     ## can not delete for status "SENDING" or "SENT"
     l_cannot_delete = ['SENDING','SENT']
@@ -392,7 +394,9 @@ async def update_cpg_blast_list(
 
 
 @app.get("/iapi/internal/cpg_report") #return all campaign
-async def get_all_campaign_report():
+async def get_all_campaign_report(
+    auth_result=Depends(myauth.allowinternal)
+):
     result = func_get_campaign_report()
     return result
 
