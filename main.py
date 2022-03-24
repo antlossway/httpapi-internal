@@ -71,6 +71,7 @@ async def create_campaign(
                      ...,
                      examples=models.example_internal_cpg,
     ),
+    auth_result=Depends(myauth.allowinternal)
 ):
 
 #    billing_id: int
@@ -272,6 +273,7 @@ async def update_cpg_blast_list(
                      ...,
                      examples=models.example_update_cpg_blast_list,
     ),
+    auth_result=Depends(myauth.allowinternal)
 ):
 
 #    cpg_id: int
@@ -477,8 +479,7 @@ def func_get_campaign_report(arg_billing_id=None):
     
     return JSONResponse(status_code=200, content=resp_json)
 
-
-whitelist_ip = ['127.0.0.1','localhost','13.214.145.167']
+#whitelist_ip = ['127.0.0.1','localhost','13.214.145.167']
 @app.post('/iapi/internal/sms', response_model=models.SMSResponse, responses=mysms.example_create_sms_response)
 async def internal_create_sms(arg_sms: models.InternalSMS, request:Request, auth_result=Depends(myauth.allowinternal)):
     d_sms = arg_sms.dict()
@@ -656,8 +657,8 @@ async def internal_create_sms(arg_sms: models.InternalSMS, request:Request, auth
 from werkzeug.security import generate_password_hash,check_password_hash
 
 @app.post('/iapi/internal/login') #check webuser where deleted=0, and live=1
-async def verify_login(arg_login: models.InternalLogin, request:Request, response:Response):
-#async def verify_login(arg_login: models.InternalLogin, request:Request, response:Response, auth_result=Depends(myauth.allowinternal)):
+#async def verify_login(arg_login: models.InternalLogin, request:Request, response:Response):
+async def verify_login(arg_login: models.InternalLogin, request:Request, response:Response, auth_result=Depends(myauth.allowinternal)):
     # check if username exists
     cur.execute("""select u.id as webuser_id,u.username,u.password_hash,u.email,u.bnumber,u.role_id,webrole.name as role_name,
     u.billing_id,b.billing_type,b.company_name,b.company_address,b.country,b.city,b.postal_code,b.currency, 
@@ -963,6 +964,7 @@ async def insert_record(
                      ...,
                      examples=models.example_internal_insert,
     ),
+    auth_result=Depends(myauth.allowinternal)
     #request: Request
 ):
     d_args = args.dict()
@@ -1295,6 +1297,7 @@ async def update_record(
                      ...,
                      examples=models.example_internal_update,
     ),
+    auth_result=Depends(myauth.allowinternal)
     #request: Request
 ):
     d_args = args.dict()
@@ -1503,7 +1506,8 @@ async def update_record(
             responses={404: {"errorcode": 1, "status": "some error msg"} }
 )
 async def delete_record(
-    args: models.InternalDelete
+    args: models.InternalDelete,
+    auth_result=Depends(myauth.allowinternal)
 ):
     d_args = args.dict()
     logger.debug(f"### orig internal delete request body: {json.dumps(d_args, indent=4)}")
@@ -1661,6 +1665,7 @@ async def traffic_report(
         ...,
         examples = models.example_traffic_report_request,
     ),
+    auth_result=Depends(myauth.allowinternal)
 ):
     d_arg = args.dict()
     arg_billing_id = d_arg.get("billing_id")
@@ -1767,6 +1772,7 @@ async def transaction_report(
         ...,
         examples = models.example_transaction_report_request,
     ),
+    auth_result=Depends(myauth.allowinternal)
 ):
     d_arg = args.dict()
     msgid = d_arg.get("msgid")
@@ -1878,6 +1884,7 @@ async def volume_chart(
         ...,
         examples = models.example_traffic_report_request,
     ),
+    auth_result=Depends(myauth.allowinternal)
 ):
     d_arg = args.dict()
     billing_id = d_arg.get("billing_id")
@@ -1979,6 +1986,7 @@ async def sell_chart(
         ...,
         examples = models.example_traffic_report_request,
     ),
+    auth_result=Depends(myauth.allowinternal)
 ):
     d_arg = args.dict()
     billing_id = d_arg.get("billing_id")
