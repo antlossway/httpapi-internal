@@ -462,7 +462,8 @@ def func_get_campaign_report(arg_billing_id=None):
                 total_cost += cost
 
             d["total_sent"] = total_qty
-            d["cost"] = f"{total_cost:,.2f}"
+            #d["cost"] = f"{total_cost:,.2f}"
+            d["cost"] = total_cost
     
         l_data.append(d)
     
@@ -1764,8 +1765,10 @@ async def traffic_report(
         d['product_name'] = product_name
         d['country'] = country
         d['total_sent'] = total_qty_per_country
-        d['sell'] = f"{data_sell.get(key,0):,.3f}"
-        d['cost'] = f"{data_cost.get(key,0):,.3f}"
+        #d['sell'] = f"{data_sell.get(key,0):,.3f}"
+        #d['cost'] = f"{data_cost.get(key,0):,.3f}"
+        d['sell'] = data_sell
+        d['cost'] = data_cost
         d['sell_currency'] = billing_ac_currency.get(int(billing_id))
         l_data.append(d)
     
@@ -1775,8 +1778,8 @@ async def traffic_report(
             "status": "Success",
             "count": len(l_data),
             "total_qty": f"{final_total_qty:,}",
-            "total_sell": f"{final_total_sell:,.3f}",
-            "total_cost": f"{final_total_cost:,.3f}",
+            "total_sell": final_total_sell,
+            "total_cost": final_total_cost,
             "results": l_data
         }
     else:
@@ -2062,7 +2065,7 @@ async def sell_chart(
             sell = d_day.get(day,0)
             d = {
                 "x": day,
-                "y": f"{sell:,.2f}"
+                "y": sell
             }
             
             l1.append(d)
